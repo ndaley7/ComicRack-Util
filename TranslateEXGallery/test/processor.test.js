@@ -70,3 +70,48 @@ test('translates image entries, updates info.txt, and leaves source zip unchange
   assert.equal(originalZip.readFile('Gallery/MCN_1.webp').toString('utf8'), 'original-image-1');
   assert.equal(originalZip.readAsText('Gallery/info.txt'), 'Title\r\nLanguage: Chinese \u00a0\r\n> language: chinese\r\n');
 });
+
+test('skips without Torii calls when ZIP filename contains the word English', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample English.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('original-image-1'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Chinese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created for skipped archives.');
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, true);
+  assert.match(result.reason, /English/);
+  assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});
+
+test('skips without Torii calls when info.txt is missing', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('original-image-1'));
+  inputZip.writeZip(inputZipPath);
+
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created when info.txt is missing.');
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, true);
+  assert.match(result.reason, /info\.txt/);
+  assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});

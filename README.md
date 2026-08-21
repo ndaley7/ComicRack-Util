@@ -14,6 +14,11 @@ It expects the ZIP to contain:
 
 The tool writes a new translated ZIP beside the original. It does not overwrite the source ZIP.
 
+Translation is skipped without contacting Torii when:
+
+- the ZIP filename contains the word `English`, case-insensitively
+- the ZIP does not contain an `info.txt` file
+
 ## Setup
 
 Install dependencies:

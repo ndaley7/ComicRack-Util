@@ -36,6 +36,8 @@ function printProgress(event) {
     console.log(`[${event.index}/${event.total}] Done ${event.filename}.${creditsText}`);
   } else if (event.type === 'credits-error') {
     console.warn(`Could not read Torii credits ${event.phase} translation: ${event.error.message}`);
+  } else if (event.type === 'skipped') {
+    console.log(`Skipped: ${event.reason}`);
   } else if (event.type === 'complete') {
     console.log(`Wrote translated ZIP: ${event.outputZipPath}`);
     if (event.creditsAfter !== undefined) {
@@ -72,9 +74,14 @@ async function main() {
   const result = await translateGalleryZip({
     inputZipPath: path.resolve(args.inputZipPath),
     outputZipPath: path.resolve(args.outputZipPath),
-    toriiClient: new ToriiClient(),
+    createToriiClient: () => new ToriiClient(),
     onProgress: printProgress
   });
+
+  if (result.skipped) {
+    console.log('No translation was attempted.');
+    return;
+  }
 
   console.log(`Translated ${result.imageCount} image(s) from ${result.sourceLanguage || 'the detected language'} to English.`);
   if (result.creditsBefore !== undefined || result.creditsAfter !== undefined || result.creditsUsed !== undefined) {

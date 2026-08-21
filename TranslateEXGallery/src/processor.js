@@ -31,10 +31,15 @@ function normalizeTranslateResult(result) {
   };
 }
 
+function hasEnglishWordInFilename(filePath) {
+  return /\benglish\b/i.test(path.basename(filePath));
+}
+
 export async function translateGalleryZip({
   inputZipPath,
   outputZipPath = defaultOutputPath(inputZipPath),
   toriiClient,
+  createToriiClient,
   onProgress = () => {}
 }) {
   if (!inputZipPath) {
@@ -48,6 +53,17 @@ export async function translateGalleryZip({
     throw new Error(`ZIP file does not exist: ${resolvedInputPath}`);
   }
 
+  if (hasEnglishWordInFilename(resolvedInputPath)) {
+    const reason = 'ZIP filename contains the word English.';
+    onProgress({ type: 'skipped', reason });
+    return {
+      skipped: true,
+      reason,
+      inputZipPath: resolvedInputPath,
+      imageCount: 0
+    };
+  }
+
   if (resolvedInputPath.toLowerCase() === resolvedOutputPath.toLowerCase()) {
     throw new Error('Output ZIP path must be different from the input ZIP path.');
   }
@@ -56,7 +72,14 @@ export async function translateGalleryZip({
   const entries = sourceZip.getEntries();
   const infoEntry = findInfoEntry(entries);
   if (!infoEntry) {
-    throw new Error('Could not find info.txt anywhere in the ZIP archive.');
+    const reason = 'Could not find info.txt anywhere in the ZIP archive.';
+    onProgress({ type: 'skipped', reason });
+    return {
+      skipped: true,
+      reason,
+      inputZipPath: resolvedInputPath,
+      imageCount: 0
+    };
   }
 
   const imageEntries = listImageEntries(entries);
@@ -67,7 +90,12 @@ export async function translateGalleryZip({
   const infoText = decodeInfoText(infoEntry.getData());
   const { sourceLanguage, updatedText } = updateLanguageToEnglish(infoText);
   const replacements = new Map([[infoEntry.entryName, Buffer.from(updatedText, 'utf8')]]);
-  const creditsBefore = await getCreditsIfAvailable(toriiClient, onProgress, 'before');
+  const activeToriiClient = toriiClient ?? createToriiClient?.();
+  if (!activeToriiClient) {
+    throw new Error('A Torii client is required to translate images.');
+  }
+
+  const creditsBefore = await getCreditsIfAvailable(activeToriiClient, onProgress, 'before');
 
   onProgress({
     type: 'start',
@@ -81,7 +109,7 @@ export async function translateGalleryZip({
     const entry = imageEntries[index];
     onProgress({ type: 'image-start', index: index + 1, total: imageEntries.length, filename: entry.entryName });
 
-    const translateResult = normalizeTranslateResult(await toriiClient.translateImage({
+    const translateResult = normalizeTranslateResult(await activeToriiClient.translateImage({
       filename: entry.entryName,
       imageBuffer: entry.getData(),
       sourceLanguage
@@ -101,7 +129,7 @@ export async function translateGalleryZip({
     });
   }
 
-  const creditsAfter = await getCreditsIfAvailable(toriiClient, onProgress, 'after');
+  const creditsAfter = await getCreditsIfAvailable(activeToriiClient, onProgress, 'after');
   const creditsUsed = creditsBefore !== undefined && creditsAfter !== undefined
     ? roundCredits(creditsBefore - creditsAfter)
     : undefined;
@@ -111,6 +139,7 @@ export async function translateGalleryZip({
   onProgress({ type: 'complete', outputZipPath: resolvedOutputPath, creditsBefore, creditsAfter, creditsUsed });
 
   return {
+    skipped: false,
     outputZipPath: resolvedOutputPath,
     sourceLanguage,
     imageCount: imageEntries.length,
