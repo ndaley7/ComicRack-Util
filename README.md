@@ -2,6 +2,60 @@
 
 Utilities for working with comic/gallery archives.
 
+## InfotoComicInfoxml
+
+`InfotoComicInfoxml` converts ExHentai/E-Hentai Downloader `info.txt` metadata into `ComicInfo.xml` files for comic archive readers.
+
+Run it against a single `info.txt`:
+
+```powershell
+python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\info.txt
+```
+
+That writes `ComicInfo.xml` beside the source `info.txt`.
+
+You can also choose an output path:
+
+```powershell
+python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\info.txt --output .\InfotoComicInfoxml\Samples\ComicInfo.xml --overwrite
+```
+
+For directories, the converter can process `info.txt` files recursively:
+
+```powershell
+python .\InfotoComicInfoxml\ComicInfoConverter.py "D:\Comics\Incoming" --recursive --overwrite
+```
+
+The converter maps gallery metadata into ComicInfo fields such as `Title`, `Series`, `Writer`, `Genre`, `Summary`, `Notes`, `Web`, `PageCount`, `LanguageISO`, `Manga`, `AgeRating`, `Characters`, `Tags`, and posted date fields.
+
+Some source `info.txt` tags may contain sensitive classification terminology. To keep the repository source friendlier for GitHub browsing, those classification trigger terms are ROT13-encoded in the script and decoded only at runtime. This does not encrypt or hide generated metadata; it only avoids storing the raw trigger terms as readable source-code literals.
+
+Local sample archives and generated sample metadata under `InfotoComicInfoxml\Samples` are ignored by Git so private or sensitive gallery metadata does not get pushed accidentally.
+
+## ZiptoCBZ
+
+`ZiptoCBZ` renames `.zip` comic archives to `.cbz`, handles duplicate `.zip`/`.cbz` pairs, and flattens archives that contain one redundant top-level folder with the same name as the archive.
+
+Run it against a directory:
+
+```powershell
+python .\ZiptoCBZ\zip_to_cbz.py "C:\path\to\comics"
+```
+
+Process one archive:
+
+```powershell
+python .\ZiptoCBZ\zip_to_cbz.py "C:\path\to\comics\Example.zip"
+```
+
+Include subdirectories:
+
+```powershell
+python .\ZiptoCBZ\zip_to_cbz.py "C:\path\to\comics" --recursive
+```
+
+When both `Example.zip` and `Example.cbz` exist, the script keeps the larger archive and moves the smaller one into a `Duplicates` folder. If they are the same size, it keeps the existing `.cbz`. When flattening an archive, it moves the original `.cbz` into `Duplicates` as a backup before replacing it with the flattened version.
+
 ## TranslateEXGallery
 
 `TranslateEXGallery` is a small Node.js CLI tool that translates image files inside an EX/E-Hentai-style gallery ZIP or CBZ using the Torii Image Translator API.
