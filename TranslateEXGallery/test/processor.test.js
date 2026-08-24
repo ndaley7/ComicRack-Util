@@ -51,6 +51,8 @@ test('translates image entries, updates info.txt, and leaves source zip unchange
   assert.equal(result.creditsBefore, 145.25);
   assert.equal(result.creditsAfter, 142.75);
   assert.equal(result.creditsUsed, 2.5);
+  assert.equal(result.estimatedCostUsd, 2.5 * (13 / 6000));
+  assert.equal(events.find((event) => event.type === 'complete').estimatedCostUsd, 2.5 * (13 / 6000));
   assert.deepEqual(
     events.filter((event) => event.type === 'image-complete').map((event) => event.creditsRemaining),
     [144.25, 143.25]
@@ -114,4 +116,30 @@ test('skips without Torii calls when info.txt is missing', async () => {
   assert.equal(result.skipped, true);
   assert.match(result.reason, /info\.txt/);
   assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});
+
+test('translates cbz archives with cbz output extension', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.cbz');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('original-image-1'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Chinese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const result = await translateGalleryZip({
+    inputZipPath,
+    toriiClient: {
+      async translateImage() {
+        return Buffer.from('translated-image-1');
+      }
+    }
+  });
+
+  assert.equal(result.skipped, false);
+  assert.equal(path.basename(result.outputZipPath), 'sample-translatedENG.cbz');
+
+  const outputZip = new AdmZip(result.outputZipPath);
+  assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
+  assert.equal(outputZip.readFile('Gallery/MCN_1.webp').toString('utf8'), 'translated-image-1');
 });

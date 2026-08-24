@@ -20,4 +20,5 @@ test('finds nested info.txt and supported image entries', () => {
 
 test('defaults translated output name to original name plus -translatedENG', () => {
   assert.equal(defaultOutputPath('C:\\Comics\\sample.zip'), 'C:\\Comics\\sample-translatedENG.zip');
+  assert.equal(defaultOutputPath('C:\\Comics\\sample.cbz'), 'C:\\Comics\\sample-translatedENG.cbz');
 });

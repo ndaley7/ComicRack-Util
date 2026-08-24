@@ -3,8 +3,14 @@ import path from 'node:path';
 import { decodeInfoText, updateLanguageToEnglish } from './infoTxt.js';
 import { buildTranslatedZip, defaultOutputPath, findInfoEntry, listImageEntries, readZip } from './zipUtils.js';
 
+export const CREDIT_PRICE_USD = 13 / 6000;
+
 function roundCredits(value) {
   return typeof value === 'number' ? Math.round(value * 100) / 100 : undefined;
+}
+
+function estimateCostUsd(creditsUsed) {
+  return typeof creditsUsed === 'number' ? creditsUsed * CREDIT_PRICE_USD : undefined;
 }
 
 async function getCreditsIfAvailable(toriiClient, onProgress, phase) {
@@ -43,18 +49,18 @@ export async function translateGalleryZip({
   onProgress = () => {}
 }) {
   if (!inputZipPath) {
-    throw new Error('A ZIP path is required.');
+    throw new Error('A ZIP or CBZ path is required.');
   }
 
   const resolvedInputPath = path.resolve(inputZipPath);
   const resolvedOutputPath = path.resolve(outputZipPath);
 
   if (!fs.existsSync(resolvedInputPath)) {
-    throw new Error(`ZIP file does not exist: ${resolvedInputPath}`);
+    throw new Error(`ZIP or CBZ file does not exist: ${resolvedInputPath}`);
   }
 
   if (hasEnglishWordInFilename(resolvedInputPath)) {
-    const reason = 'ZIP filename contains the word English.';
+    const reason = 'Archive filename contains the word English.';
     onProgress({ type: 'skipped', reason });
     return {
       skipped: true,
@@ -65,14 +71,14 @@ export async function translateGalleryZip({
   }
 
   if (resolvedInputPath.toLowerCase() === resolvedOutputPath.toLowerCase()) {
-    throw new Error('Output ZIP path must be different from the input ZIP path.');
+    throw new Error('Output archive path must be different from the input archive path.');
   }
 
   const sourceZip = readZip(resolvedInputPath);
   const entries = sourceZip.getEntries();
   const infoEntry = findInfoEntry(entries);
   if (!infoEntry) {
-    const reason = 'Could not find info.txt anywhere in the ZIP archive.';
+    const reason = 'Could not find info.txt anywhere in the archive.';
     onProgress({ type: 'skipped', reason });
     return {
       skipped: true,
@@ -84,7 +90,7 @@ export async function translateGalleryZip({
 
   const imageEntries = listImageEntries(entries);
   if (imageEntries.length === 0) {
-    throw new Error('The ZIP archive does not contain any supported image files.');
+    throw new Error('The archive does not contain any supported image files.');
   }
 
   const infoText = decodeInfoText(infoEntry.getData());
@@ -133,10 +139,11 @@ export async function translateGalleryZip({
   const creditsUsed = creditsBefore !== undefined && creditsAfter !== undefined
     ? roundCredits(creditsBefore - creditsAfter)
     : undefined;
+  const estimatedCostUsd = estimateCostUsd(creditsUsed);
   const outputZip = buildTranslatedZip(sourceZip, replacements);
   outputZip.writeZip(resolvedOutputPath);
 
-  onProgress({ type: 'complete', outputZipPath: resolvedOutputPath, creditsBefore, creditsAfter, creditsUsed });
+  onProgress({ type: 'complete', outputZipPath: resolvedOutputPath, creditsBefore, creditsAfter, creditsUsed, estimatedCostUsd });
 
   return {
     skipped: false,
@@ -145,6 +152,7 @@ export async function translateGalleryZip({
     imageCount: imageEntries.length,
     creditsBefore,
     creditsAfter,
-    creditsUsed
+    creditsUsed,
+    estimatedCostUsd
   };
 }

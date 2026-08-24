@@ -6,6 +6,8 @@ import { translateGalleryZip } from './processor.js';
 import { ToriiClient } from './toriiClient.js';
 import { defaultOutputPath } from './zipUtils.js';
 
+const COST_RATIO_TEXT = '$13 / 6000 credits';
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -21,6 +23,19 @@ function parseArgs(argv) {
     }
   }
   return args;
+}
+
+function formatUsd(value) {
+  if (typeof value !== 'number') {
+    return 'unknown';
+  }
+
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4
+  }).format(value);
 }
 
 function printProgress(event) {
@@ -39,12 +54,15 @@ function printProgress(event) {
   } else if (event.type === 'skipped') {
     console.log(`Skipped: ${event.reason}`);
   } else if (event.type === 'complete') {
-    console.log(`Wrote translated ZIP: ${event.outputZipPath}`);
+    console.log(`Wrote translated archive: ${event.outputZipPath}`);
     if (event.creditsAfter !== undefined) {
       console.log(`Credits after: ${event.creditsAfter}`);
     }
     if (event.creditsUsed !== undefined) {
       console.log(`Credits used: ${event.creditsUsed}`);
+    }
+    if (event.estimatedCostUsd !== undefined) {
+      console.log(`Estimated cost: ${formatUsd(event.estimatedCostUsd)} (${COST_RATIO_TEXT})`);
     }
   }
 }
@@ -53,12 +71,12 @@ async function promptForMissingArgs(args) {
   const rl = createInterface({ input, output });
   try {
     if (!args.inputZipPath) {
-      args.inputZipPath = (await rl.question('ZIP file path: ')).trim();
+      args.inputZipPath = (await rl.question('ZIP/CBZ file path: ')).trim();
     }
 
     if (!args.outputZipPath) {
       const suggestedOutput = defaultOutputPath(args.inputZipPath);
-      const answer = (await rl.question(`Output ZIP path [${suggestedOutput}]: `)).trim();
+      const answer = (await rl.question(`Output archive path [${suggestedOutput}]: `)).trim();
       args.outputZipPath = answer || suggestedOutput;
     }
   } finally {
@@ -86,6 +104,9 @@ async function main() {
   console.log(`Translated ${result.imageCount} image(s) from ${result.sourceLanguage || 'the detected language'} to English.`);
   if (result.creditsBefore !== undefined || result.creditsAfter !== undefined || result.creditsUsed !== undefined) {
     console.log(`Credit summary: before=${result.creditsBefore ?? 'unknown'}, after=${result.creditsAfter ?? 'unknown'}, used=${result.creditsUsed ?? 'unknown'}`);
+  }
+  if (result.estimatedCostUsd !== undefined) {
+    console.log(`Estimated cost summary: ${formatUsd(result.estimatedCostUsd)} (${COST_RATIO_TEXT})`);
   }
 }
 
