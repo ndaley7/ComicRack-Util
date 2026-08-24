@@ -6,7 +6,7 @@ Utilities for working with comic/gallery archives.
 
 `InfotoComicInfoxml` converts ExHentai/E-Hentai Downloader `info.txt` metadata into `ComicInfo.xml` files for comic archive readers.
 
-Run it against a single `info.txt`:
+Run it against a single loose `info.txt`:
 
 ```powershell
 python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\info.txt
@@ -14,16 +14,28 @@ python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\i
 
 That writes `ComicInfo.xml` beside the source `info.txt`.
 
+Run it directly against a `.cbz` archive:
+
+```powershell
+python .\InfotoComicInfoxml\ComicInfoConverter.py "C:\path\to\comic.cbz"
+```
+
+For `.cbz` input, the converter only uses `info.txt` when it is present at the archive root. If root `info.txt` is missing, the archive is skipped. If root `ComicInfo.xml` already exists, the archive is skipped unless `--force` is passed:
+
+```powershell
+python .\InfotoComicInfoxml\ComicInfoConverter.py "C:\path\to\comic.cbz" --force
+```
+
 You can also choose an output path:
 
 ```powershell
-python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\info.txt --output .\InfotoComicInfoxml\Samples\ComicInfo.xml --overwrite
+python .\InfotoComicInfoxml\ComicInfoConverter.py .\InfotoComicInfoxml\Samples\info.txt --output .\InfotoComicInfoxml\Samples\ComicInfo.xml --force
 ```
 
 For directories, the converter can process `info.txt` files recursively:
 
 ```powershell
-python .\InfotoComicInfoxml\ComicInfoConverter.py "D:\Comics\Incoming" --recursive --overwrite
+python .\InfotoComicInfoxml\ComicInfoConverter.py "D:\Comics\Incoming" --recursive --force
 ```
 
 The converter maps gallery metadata into ComicInfo fields such as `Title`, `Series`, `Writer`, `Genre`, `Summary`, `Notes`, `Web`, `PageCount`, `LanguageISO`, `Manga`, `AgeRating`, `Characters`, `Tags`, and posted date fields.

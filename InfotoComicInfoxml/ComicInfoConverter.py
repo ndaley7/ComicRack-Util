@@ -8,6 +8,10 @@ import re
 import sys
 import argparse
 import codecs
+import os
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
@@ -86,13 +90,9 @@ class GalleryMetadata:
     social_links: List[str] = field(default_factory=list)
 
 
-def parse_info_txt(filepath: str) -> GalleryMetadata:
-    """Parse the info.txt file into GalleryMetadata."""
+def parse_info_content(content: str) -> GalleryMetadata:
+    """Parse info.txt content into GalleryMetadata."""
     meta = GalleryMetadata()
-    
-    with open(filepath, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
     lines = content.split('\n')
     
     # Title is the first non-empty line
@@ -192,6 +192,12 @@ def parse_info_txt(filepath: str) -> GalleryMetadata:
                 break
     
     return meta
+
+
+def parse_info_txt(filepath: str) -> GalleryMetadata:
+    """Parse the info.txt file into GalleryMetadata."""
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
+        return parse_info_content(f.read())
 
 
 def build_prefixed_tags(tags: Dict[str, List[str]]) -> List[str]:
@@ -525,12 +531,75 @@ def convert_file(info_path: Path, output_path: Path = None, overwrite: bool = Fa
 
     destination = output_path or info_path.with_name('ComicInfo.xml')
     if destination.exists() and not overwrite:
-        raise FileExistsError(f'Output already exists: {destination}. Use --overwrite to replace it.')
+        raise FileExistsError(f'Output already exists: {destination}. Use --force to replace it.')
 
     meta = parse_info_txt(str(info_path))
     xml = build_comicinfo_xml(meta)
     destination.write_text(xml, encoding='utf-8', newline='\n')
     return destination
+
+
+def normalized_archive_name(name: str) -> str:
+    return name.replace('\\', '/').lstrip('/')
+
+
+def is_root_archive_file(name: str, expected_name: str) -> bool:
+    normalized = normalized_archive_name(name)
+    return '/' not in normalized and normalized.lower() == expected_name.lower()
+
+
+def find_root_archive_file(names: List[str], expected_name: str) -> str:
+    for name in names:
+        if is_root_archive_file(name, expected_name):
+            return name
+    return ''
+
+
+def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
+    """Add ComicInfo.xml to a CBZ when root info.txt is present."""
+    if not cbz_path.is_file():
+        raise FileNotFoundError(f'Input file does not exist: {cbz_path}')
+    if cbz_path.suffix.lower() != '.cbz':
+        raise ValueError(f'Input file is not a .cbz archive: {cbz_path}')
+
+    with zipfile.ZipFile(cbz_path, 'r') as source:
+        names = source.namelist()
+        info_entry = find_root_archive_file(names, 'info.txt')
+        comicinfo_entry = find_root_archive_file(names, 'ComicInfo.xml')
+
+        if not info_entry:
+            return f'Skipped {cbz_path}: root info.txt not found.'
+        if comicinfo_entry and not force:
+            return f'Skipped {cbz_path}: root ComicInfo.xml already exists. Use --force to replace it.'
+
+        content = source.read(info_entry).decode('utf-8-sig')
+        xml = build_comicinfo_xml(parse_info_content(content))
+
+        temp_handle, temp_name = tempfile.mkstemp(
+            dir=str(cbz_path.parent),
+            prefix=f'.{cbz_path.stem}.',
+            suffix='.tmp',
+        )
+        os.close(temp_handle)
+        temp_path = Path(temp_name)
+
+    try:
+        with zipfile.ZipFile(cbz_path, 'r') as source:
+            with zipfile.ZipFile(temp_path, 'w') as destination:
+                for item in source.infolist():
+                    if is_root_archive_file(item.filename, 'ComicInfo.xml'):
+                        continue
+                    destination.writestr(item, source.read(item.filename))
+                destination.writestr('ComicInfo.xml', xml)
+
+        shutil.move(str(temp_path), str(cbz_path))
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
+    action = 'Replaced' if comicinfo_entry else 'Added'
+    return f'{action} ComicInfo.xml in {cbz_path}'
 
 
 def find_info_files(path: Path, recursive: bool) -> List[Path]:
@@ -546,16 +615,28 @@ def find_info_files(path: Path, recursive: bool) -> List[Path]:
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='Convert ExHentai/E-Hentai Downloader info.txt metadata to ComicInfo.xml.'
+        description='Convert ExHentai/E-Hentai Downloader info.txt metadata to ComicInfo.xml.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            'Examples:\n'
+            '  python ComicInfoConverter.py info.txt\n'
+            '  python ComicInfoConverter.py gallery.cbz\n'
+            '  python ComicInfoConverter.py gallery.cbz --force\n'
+            '  python ComicInfoConverter.py "D:\\Comics\\Incoming" --recursive --force\n\n'
+            'CBZ behavior:\n'
+            '  Only a root-level info.txt is used.\n'
+            '  Archives without root info.txt are skipped.\n'
+            '  Existing root ComicInfo.xml entries are skipped unless --force is passed.'
+        ),
     )
     parser.add_argument(
         'input',
-        help='Path to an info.txt file or a directory containing info.txt files.',
+        help='Path to an info.txt file, a .cbz archive, or a directory containing info.txt files.',
     )
     parser.add_argument(
         '-o',
         '--output',
-        help='Output XML path. Only valid when converting a single info.txt file.',
+        help='Output XML path. Only valid when converting a single info.txt file, not a .cbz archive.',
     )
     parser.add_argument(
         '-r',
@@ -564,9 +645,15 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         help='When input is a directory, find info.txt files recursively.',
     )
     parser.add_argument(
+        '-f',
+        '--force',
+        action='store_true',
+        help='Replace existing ComicInfo.xml output. Required to replace ComicInfo.xml inside a .cbz.',
+    )
+    parser.add_argument(
         '--overwrite',
         action='store_true',
-        help='Overwrite existing ComicInfo.xml files.',
+        help='Compatibility alias for --force.',
     )
     return parser.parse_args(argv)
 
@@ -574,6 +661,19 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 def main(argv: List[str] = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     input_path = Path(args.input)
+    force = args.force or args.overwrite
+
+    if input_path.is_file() and input_path.suffix.lower() == '.cbz':
+        if args.output:
+            print('--output cannot be used when converting a .cbz archive.', file=sys.stderr)
+            return 1
+        try:
+            print(convert_cbz_file(input_path, force))
+        except Exception as exc:
+            print(f'Failed to convert {input_path}: {exc}', file=sys.stderr)
+            return 1
+        return 0
+
     info_files = find_info_files(input_path, args.recursive)
 
     if not info_files:
@@ -586,7 +686,7 @@ def main(argv: List[str] = None) -> int:
     for info_file in info_files:
         output_path = Path(args.output) if args.output else None
         try:
-            destination = convert_file(info_file, output_path, args.overwrite)
+            destination = convert_file(info_file, output_path, force)
             print(f'Wrote {destination}')
         except Exception as exc:
             print(f'Failed to convert {info_file}: {exc}', file=sys.stderr)
