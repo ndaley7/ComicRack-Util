@@ -17,6 +17,7 @@ from comicrack_master import (
     load_app_settings,
     load_source_state,
     repo_root,
+    records_as_copy_list,
     save_app_settings,
     save_source_state,
     scan_source_directory,
@@ -175,8 +176,11 @@ class ComicRackMasterUI(tk.Tk):
         status_frame.columnconfigure(0, weight=1)
         status = ttk.Label(status_frame, textvariable=self.status_var, anchor="w")
         status.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        list_button = ttk.Button(status_frame, text="Comic List", command=self.show_logged_comics)
+        list_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        Tooltip(list_button, "Open a copyable list of every comic currently loaded in the table.")
         self.progress = ttk.Progressbar(status_frame, mode="indeterminate", length=220)
-        self.progress.grid(row=0, column=1, sticky="e")
+        self.progress.grid(row=0, column=2, sticky="e")
         Tooltip(self.progress, "Shows that a scan, conversion, translation, or sync operation is running.")
 
     def _add_path_row(self, parent: ttk.Frame, row: int, label_text: str, variable: tk.StringVar, tooltip: str) -> None:
@@ -477,6 +481,50 @@ class ComicRackMasterUI(tk.Tk):
             return sync_selected_archives(self.records, source, remote_sync_target)
 
         self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
+
+    def show_logged_comics(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Logged Comics")
+        window.geometry("700x520")
+        window.minsize(520, 360)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+
+        frame = ttk.Frame(window, padding=10)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        text = tk.Text(frame, wrap="none", undo=False)
+        text.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        text.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        list_text = records_as_copy_list(self.records)
+        display_text = list_text or "No comics are currently logged."
+        text.insert("1.0", display_text)
+        text.focus_set()
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        button_frame.columnconfigure(0, weight=1)
+
+        count_label = ttk.Label(button_frame, text=f"{len(self.records)} comic(s)")
+        count_label.grid(row=0, column=0, sticky="w")
+        copy_button = ttk.Button(button_frame, text="Copy All", command=lambda: self.copy_logged_comics(list_text))
+        copy_button.grid(row=0, column=1, sticky="e", padx=(0, 6))
+        close_button = ttk.Button(button_frame, text="Close", command=window.destroy)
+        close_button.grid(row=0, column=2, sticky="e")
+        Tooltip(copy_button, "Copy the full comic list to the clipboard.")
+        Tooltip(close_button, "Close this list window.")
+
+    def copy_logged_comics(self, list_text: str) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(list_text)
+        self.status_var.set("Copied comic list to clipboard")
 
     def require_source(self) -> Path | None:
         source = self.source_dir_or_none()

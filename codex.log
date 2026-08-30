@@ -35,3 +35,15 @@ Actions:
 - Disabled action buttons while background work is running to prevent overlapping operations.
 - Updated README.md to mention background work and the bottom progress bar.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
+
+2026-08-30
+
+Prompt:
+Add a button at the bottom that opens another window displaying all currently logged comics in a window where they can be copied in list form.
+
+Actions:
+- Added a bottom Comic List button that opens a separate Logged Comics window.
+- Added a plain text list of currently loaded archive rows with scrollbars, normal selection/copy support, and a Copy All button.
+- Added a shared records_as_copy_list helper and regression coverage for the copied list format.
+- Updated README.md to document the Comic List button.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.

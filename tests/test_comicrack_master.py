@@ -6,6 +6,7 @@ from pathlib import Path
 from comicrack_master import (
     AppSettings,
     load_app_settings,
+    records_as_copy_list,
     load_source_state,
     save_app_settings,
     save_source_state,
@@ -66,6 +67,16 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source)
 
             self.assertEqual([record.relative_path for record in records], ["Root.cbz"])
+
+    def test_records_as_copy_list_returns_current_record_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "First.zip", {"page.jpg": "image"})
+            write_archive(source / "Second.cbz", {"page.jpg": "image"})
+
+            records = scan_source_directory(source)
+
+            self.assertEqual(records_as_copy_list(records), "First.zip\nSecond.cbz")
 
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:

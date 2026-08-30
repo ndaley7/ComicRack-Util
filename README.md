@@ -19,7 +19,8 @@ Use **Rescan** to force-refresh status for ZIP and CBZ files directly inside
 the source folder. Subdirectories are ignored. ZIP files are listed first, and
 newly discovered CBZ files are selected by default. Scans and utility actions
 run in the background, with the bottom progress bar showing when work is in
-progress.
+progress. Use the bottom **Comic List** button to open a copyable plain-text
+list of the currently loaded comics.
 
 ## InfotoComicInfoxml
 

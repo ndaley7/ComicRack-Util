@@ -232,6 +232,10 @@ def selected_paths(records: list[ArchiveRecord], source_dir: Path) -> list[Path]
     return [source_dir / record.relative_path for record in records if record.selected]
 
 
+def records_as_copy_list(records: list[ArchiveRecord]) -> str:
+    return "\n".join(record.relative_path for record in records)
+
+
 def sync_selected_archives(records: list[ArchiveRecord], source_dir: Path, remote_sync_target: str) -> list[str]:
     if not remote_sync_target:
         raise ValueError("Remote Sync Target is not set.")
