@@ -133,7 +133,7 @@ class ComicRackMasterUI(tk.Tk):
         self._add_button(toolbar, "Rescan", self.rescan, 0, "Force-refresh archive status from the ComicRack Source folder.")
         self._add_button(toolbar, "Select All", self.select_all, 1, "Select every listed archive.")
         self._add_button(toolbar, "Select None", self.select_none, 2, "Clear all archive selections.")
-        self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Run the ZiptoCBZ utility on selected ZIP archives.")
+        self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Rename selected ZIP archives to CBZ and flatten a redundant same-named top-level folder when present.")
         self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 4, "Add ComicInfo.xml to selected CBZ archives that contain root info.txt.")
         self._add_button(toolbar, "Translate", self.translate_selected, 5, "Run TranslateEXGallery for selected non-English archives.")
         self._add_button(toolbar, "Sync Selected", self.sync_selected, 6, "Copy selected archives to the Remote Sync Target folder.")

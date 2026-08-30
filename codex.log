@@ -74,3 +74,12 @@ Actions:
 - Kept the default ZIP-first scan order until the user selects a sort column.
 - Updated README.md and added regression coverage for column sorting.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py`; both passed.
+
+2026-08-30
+
+Prompt:
+Add the Zip to CBZ redundant top-level folder flattening behavior to the hover description.
+
+Actions:
+- Updated the Zip to CBZ button tooltip to mention renaming selected ZIP archives and flattening redundant same-named top-level folders when present.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py`; both passed.
