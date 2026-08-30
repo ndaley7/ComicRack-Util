@@ -4,12 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import shutil
 import zipfile
 from pathlib import Path
 
 
 DUPLICATES_DIR_NAME = "Duplicates"
+
+
+def configure_text_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def unique_path(path: Path) -> Path:
@@ -181,6 +188,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    configure_text_output()
     args = parse_args()
     target = Path(args.target).expanduser().resolve()
 

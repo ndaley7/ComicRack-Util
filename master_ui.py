@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import threading
@@ -39,6 +40,25 @@ TREE_HEADINGS = {
     "synced": "Synced",
     "error": "Status",
 }
+
+
+def subprocess_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8:backslashreplace"
+    return env
+
+
+def run_captured_command(command: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=str(cwd) if cwd is not None else None,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=subprocess_environment(),
+        check=False,
+    )
 
 
 class Tooltip:
@@ -419,12 +439,7 @@ class ComicRackMasterUI(tk.Tk):
             messages = []
             for record in targets:
                 archive_path = source / record.relative_path
-                result = subprocess.run(
-                    [sys.executable, str(script), str(archive_path)],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+                result = run_captured_command([sys.executable, str(script), str(archive_path)])
                 output = (result.stdout + result.stderr).strip()
                 messages.append(output or f"Processed {record.relative_path}")
                 if result.returncode != 0:
@@ -447,12 +462,7 @@ class ComicRackMasterUI(tk.Tk):
             messages = []
             for record in targets:
                 archive_path = source / record.relative_path
-                result = subprocess.run(
-                    [sys.executable, str(script), str(archive_path)],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
+                result = run_captured_command([sys.executable, str(script), str(archive_path)])
                 output = (result.stdout + result.stderr).strip()
                 messages.append(output or f"Processed {record.relative_path}")
                 if result.returncode != 0:
@@ -481,12 +491,9 @@ class ComicRackMasterUI(tk.Tk):
             for record in targets:
                 archive_path = source / record.relative_path
                 output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
-                result = subprocess.run(
+                result = run_captured_command(
                     ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)],
-                    cwd=str(cli_dir),
-                    capture_output=True,
-                    text=True,
-                    check=False,
+                    cwd=cli_dir,
                 )
                 output = (result.stdout + result.stderr).strip()
                 messages.append(output or f"Processed {record.relative_path}")
@@ -517,12 +524,7 @@ class ComicRackMasterUI(tk.Tk):
         script = repo_root() / "RemoveDuplicates" / "remove_duplicates.py"
 
         def action() -> list[str]:
-            result = subprocess.run(
-                [sys.executable, str(script), str(source)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            result = run_captured_command([sys.executable, str(script), str(source)])
             output = (result.stdout + result.stderr).strip()
             messages = output.splitlines() if output else ["Remove duplicates finished."]
             if result.returncode != 0:

@@ -86,6 +86,9 @@ Local sample archives and generated sample metadata under `InfotoComicInfoxml\Sa
 ## ZiptoCBZ
 
 `ZiptoCBZ` renames `.zip` comic archives to `.cbz`, handles duplicate `.zip`/`.cbz` pairs, and flattens archives that contain one redundant top-level folder with the same name as the archive.
+It is safe to run against filenames containing Thai, Korean, Russian,
+Japanese, Chinese, and other Unicode characters; utility output is forced to
+UTF-8 to avoid Windows console encoding failures.
 
 Run it against a directory:
 

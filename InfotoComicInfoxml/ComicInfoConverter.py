@@ -63,6 +63,12 @@ _AUDIENCE_GENRE_ENCODED = 'Nqhyg'
 _GENRE_LABELS_ENCODED = ('Uragnv', 'Cbeabtencul')
 
 
+def configure_text_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
+
+
 def decode_text(value: str) -> str:
     return codecs.decode(value, 'rot_13')
 
@@ -659,6 +665,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
 
 def main(argv: List[str] = None) -> int:
+    configure_text_output()
     args = parse_args(argv or sys.argv[1:])
     input_path = Path(args.input)
     force = args.force or args.overwrite

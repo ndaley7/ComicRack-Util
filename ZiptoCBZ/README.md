@@ -3,6 +3,10 @@
 Rename `.zip` comic archives to `.cbz` and flatten redundant same-named folders
 inside `.cbz` archives.
 
+Filenames containing Thai, Korean, Russian, Japanese, Chinese, and other
+Unicode characters are supported. Script output is forced to UTF-8 with a
+fallback for characters the active terminal cannot display.
+
 ## Usage
 
 ```powershell

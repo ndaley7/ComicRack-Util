@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,12 @@ DUPLICATES_DIR_NAME = "_DUPLICATES"
 LOG_FILENAME = "duplicates.log"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 CHUNK_SIZE = 1024 * 1024
+
+
+def configure_text_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 @dataclass
@@ -166,6 +173,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    configure_text_output()
     args = parse_args()
     try:
         messages = move_duplicate_archives(Path(args.source), dry_run=args.dry_run)
