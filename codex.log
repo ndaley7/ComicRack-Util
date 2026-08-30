@@ -61,3 +61,16 @@ Actions:
 - Added tests for duplicate moves, CBZ-over-ZIP keep preference, hash mismatch safety, logging, and subdirectory ignoring.
 - Added _DUPLICATES to .gitignore so moved local archives are not accidentally staged.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py`; both passed.
+
+2026-08-30
+
+Prompt:
+Make the entries sortable based on the column clicked.
+
+Actions:
+- Added a shared sorted_archive_records helper for sorting archive records by table columns.
+- Wired table headings so clicking any column sorts by that column and clicking it again reverses direction.
+- Added heading markers to show the active sort direction.
+- Kept the default ZIP-first scan order until the user selects a sort column.
+- Updated README.md and added regression coverage for column sorting.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py`; both passed.

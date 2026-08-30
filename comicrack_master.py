@@ -236,6 +236,31 @@ def records_as_copy_list(records: list[ArchiveRecord]) -> str:
     return "\n".join(record.relative_path for record in records)
 
 
+def sorted_archive_records(records: list[ArchiveRecord], column: str, reverse: bool = False) -> list[ArchiveRecord]:
+    def sort_key(record: ArchiveRecord) -> tuple[Any, str]:
+        if column == "selected":
+            value: Any = int(record.selected)
+        elif column == "file":
+            value = record.relative_path.lower()
+        elif column == "cbz":
+            value = int(record.cbz)
+        elif column == "info":
+            value = int(record.has_info)
+        elif column == "comicinfo":
+            value = int(record.has_comicinfo)
+        elif column == "english":
+            value = int(record.english)
+        elif column == "synced":
+            value = int(record.synced)
+        elif column == "error":
+            value = record.error.lower()
+        else:
+            value = record.relative_path.lower()
+        return value, record.relative_path.lower()
+
+    return sorted(records, key=sort_key, reverse=reverse)
+
+
 def sync_selected_archives(records: list[ArchiveRecord], source_dir: Path, remote_sync_target: str) -> list[str]:
     if not remote_sync_target:
         raise ValueError("Remote Sync Target is not set.")

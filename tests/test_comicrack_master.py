@@ -11,6 +11,7 @@ from comicrack_master import (
     save_app_settings,
     save_source_state,
     scan_source_directory,
+    sorted_archive_records,
 )
 
 
@@ -77,6 +78,21 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source)
 
             self.assertEqual(records_as_copy_list(records), "First.zip\nSecond.cbz")
+
+    def test_sorted_archive_records_sorts_by_clicked_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Beta.cbz", {"info.txt": "Language: English"})
+            write_archive(source / "Alpha.zip", {"page.jpg": "image"})
+            records = scan_source_directory(source)
+
+            by_file_desc = sorted_archive_records(records, "file", reverse=True)
+            by_cbz_desc = sorted_archive_records(records, "cbz", reverse=True)
+            by_info_desc = sorted_archive_records(records, "info", reverse=True)
+
+            self.assertEqual([record.relative_path for record in by_file_desc], ["Beta.cbz", "Alpha.zip"])
+            self.assertEqual([record.relative_path for record in by_cbz_desc], ["Beta.cbz", "Alpha.zip"])
+            self.assertEqual([record.relative_path for record in by_info_desc], ["Beta.cbz", "Alpha.zip"])
 
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:

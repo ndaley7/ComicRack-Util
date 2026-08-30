@@ -21,6 +21,7 @@ from comicrack_master import (
     save_app_settings,
     save_source_state,
     scan_source_directory,
+    sorted_archive_records,
     sync_selected_archives,
     update_record_selection,
 )
@@ -28,6 +29,16 @@ from comicrack_master import (
 
 YES = "Yes"
 NO = "No"
+TREE_HEADINGS = {
+    "selected": "Use",
+    "file": "File",
+    "cbz": "CBZ",
+    "info": "Info",
+    "comicinfo": "ComicInfo",
+    "english": "ENGLISH",
+    "synced": "Synced",
+    "error": "Status",
+}
 
 
 class Tooltip:
@@ -78,6 +89,8 @@ class ComicRackMasterUI(tk.Tk):
         self.selected_count_var = tk.StringVar(value="No archives selected")
         self.busy = False
         self.action_buttons: list[ttk.Button] = []
+        self.sort_column: str | None = None
+        self.sort_reverse = False
 
         self._build_ui()
         if self.source_var.get():
@@ -137,14 +150,7 @@ class ComicRackMasterUI(tk.Tk):
 
         columns = ("selected", "file", "cbz", "info", "comicinfo", "english", "synced", "error")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
-        self.tree.heading("selected", text="Use")
-        self.tree.heading("file", text="File")
-        self.tree.heading("cbz", text="CBZ")
-        self.tree.heading("info", text="Info")
-        self.tree.heading("comicinfo", text="ComicInfo")
-        self.tree.heading("english", text="ENGLISH")
-        self.tree.heading("synced", text="Synced")
-        self.tree.heading("error", text="Status")
+        self.configure_tree_headings()
         self.tree.column("selected", width=54, minwidth=54, stretch=False, anchor="center")
         self.tree.column("file", width=430, minwidth=240, stretch=True)
         for column in ("cbz", "info", "comicinfo", "english", "synced"):
@@ -159,7 +165,7 @@ class ComicRackMasterUI(tk.Tk):
         y_scroll.grid(row=0, column=1, sticky="ns")
         Tooltip(
             self.tree,
-            "Click the Use column or press Space to toggle processing. Only files directly inside ComicRack Source are listed. ZIP files appear first; CBZ files are selected by default on first scan.",
+            "Click a column heading to sort. Click the Use column or press Space to toggle processing. Only files directly inside ComicRack Source are listed. ZIP files appear first until a sort is selected.",
         )
 
         log_frame = ttk.LabelFrame(self, text="Run Log", padding=6)
@@ -200,6 +206,24 @@ class ComicRackMasterUI(tk.Tk):
         button.grid(row=0, column=column, padx=(0, 6), pady=2)
         Tooltip(button, tooltip)
         self.action_buttons.append(button)
+
+    def configure_tree_headings(self) -> None:
+        for column, label in TREE_HEADINGS.items():
+            marker = ""
+            if column == self.sort_column:
+                marker = " v" if self.sort_reverse else " ^"
+            self.tree.heading(column, text=f"{label}{marker}", command=lambda sort_column=column: self.sort_by_column(sort_column))
+
+    def sort_by_column(self, column: str) -> None:
+        if self.sort_column == column:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_column = column
+            self.sort_reverse = False
+
+        self.records = sorted_archive_records(self.records, column, self.sort_reverse)
+        self.configure_tree_headings()
+        self.populate_tree()
 
     def choose_directory(self, variable: tk.StringVar) -> None:
         initial_dir = variable.get() or str(Path.home())
@@ -309,7 +333,10 @@ class ComicRackMasterUI(tk.Tk):
             return records
 
         def on_success(records: list[ArchiveRecord]) -> None:
-            self.records = records
+            if self.sort_column:
+                self.records = sorted_archive_records(records, self.sort_column, self.sort_reverse)
+            else:
+                self.records = records
             self.populate_tree()
             self.append_log(f"Scanned {len(self.records)} archive(s) from {source}")
 
