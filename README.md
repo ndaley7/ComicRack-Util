@@ -20,8 +20,9 @@ the source folder. Subdirectories are ignored. ZIP files are listed first, and
 newly discovered CBZ files are selected by default. Scans and utility actions
 run in the background, with the bottom progress bar showing when work is in
 progress. Click any table column heading to sort by that column; clicking the
-same heading again reverses the sort. Use the bottom **Comic List** button to
-open a copyable plain-text list of the currently loaded comics.
+same heading again reverses the sort. Drag table heading borders to resize
+columns; those widths persist between runs. Use the bottom **Comic List** button
+to open a copyable plain-text list of the currently loaded comics.
 
 The **Remove Dups** button runs the `RemoveDuplicates` utility against the
 ComicRack Source folder. It compares direct-child `.zip` and `.cbz` archives by

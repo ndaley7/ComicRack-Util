@@ -97,10 +97,22 @@ class ComicRackMasterTests(unittest.TestCase):
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:
             base = Path(base_raw)
-            settings = AppSettings("C:/Comics", "D:/Remote", "E:/Fansadox")
+            settings = AppSettings("C:/Comics", "D:/Remote", "E:/Fansadox", {"file": 900})
             save_app_settings(settings, base)
 
             self.assertEqual(load_app_settings(base), settings)
+
+    def test_app_settings_ignores_invalid_column_widths(self) -> None:
+        with tempfile.TemporaryDirectory() as base_raw:
+            base = Path(base_raw)
+            (base / "master_ui_settings.json").write_text(
+                '{"comicrack_source": "C:/Comics", "column_widths": {"file": "800", "cbz": "bad", "info": 0}}',
+                encoding="utf-8",
+            )
+
+            settings = load_app_settings(base)
+
+            self.assertEqual(settings.column_widths, {"file": 800})
 
 
 if __name__ == "__main__":

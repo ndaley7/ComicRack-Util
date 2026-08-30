@@ -40,6 +40,27 @@ TREE_HEADINGS = {
     "synced": "Synced",
     "error": "Status",
 }
+TREE_COLUMNS = tuple(TREE_HEADINGS.keys())
+DEFAULT_COLUMN_WIDTHS = {
+    "selected": 54,
+    "file": 430,
+    "cbz": 92,
+    "info": 92,
+    "comicinfo": 92,
+    "english": 92,
+    "synced": 92,
+    "error": 150,
+}
+COLUMN_MIN_WIDTHS = {
+    "selected": 54,
+    "file": 240,
+    "cbz": 82,
+    "info": 82,
+    "comicinfo": 82,
+    "english": 82,
+    "synced": 82,
+    "error": 100,
+}
 
 
 def subprocess_environment() -> dict[str, str]:
@@ -168,24 +189,21 @@ class ComicRackMasterUI(tk.Tk):
         list_frame.rowconfigure(0, weight=1)
         list_frame.columnconfigure(0, weight=1)
 
-        columns = ("selected", "file", "cbz", "info", "comicinfo", "english", "synced", "error")
-        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
+        self.tree = ttk.Treeview(list_frame, columns=TREE_COLUMNS, show="headings", selectmode="browse")
         self.configure_tree_headings()
-        self.tree.column("selected", width=54, minwidth=54, stretch=False, anchor="center")
-        self.tree.column("file", width=430, minwidth=240, stretch=True)
-        for column in ("cbz", "info", "comicinfo", "english", "synced"):
-            self.tree.column(column, width=92, minwidth=82, stretch=False, anchor="center")
-        self.tree.column("error", width=150, minwidth=100, stretch=True)
-        self.tree.bind("<ButtonRelease-1>", self.on_tree_click)
+        self.configure_tree_columns()
+        self.tree.bind("<ButtonRelease-1>", self.on_tree_button_release)
         self.tree.bind("<space>", self.toggle_current_selection)
 
         y_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=y_scroll.set)
+        x_scroll = ttk.Scrollbar(list_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
         Tooltip(
             self.tree,
-            "Click a column heading to sort. Click the Use column or press Space to toggle processing. Only files directly inside ComicRack Source are listed. ZIP files appear first until a sort is selected.",
+            "Click a column heading to sort. Drag heading borders to resize columns; widths are saved. Click the Use column or press Space to toggle processing.",
         )
 
         log_frame = ttk.LabelFrame(self, text="Run Log", padding=6)
@@ -234,6 +252,23 @@ class ComicRackMasterUI(tk.Tk):
                 marker = " v" if self.sort_reverse else " ^"
             self.tree.heading(column, text=f"{label}{marker}", command=lambda sort_column=column: self.sort_by_column(sort_column))
 
+    def configure_tree_columns(self) -> None:
+        saved_widths = self.settings.column_widths
+        for column in TREE_COLUMNS:
+            width = saved_widths.get(column, DEFAULT_COLUMN_WIDTHS[column])
+            minwidth = COLUMN_MIN_WIDTHS[column]
+            anchor = "w" if column in {"file", "error"} else "center"
+            self.tree.column(column, width=max(width, minwidth), minwidth=minwidth, stretch=False, anchor=anchor)
+
+    def current_column_widths(self) -> dict[str, int]:
+        if not hasattr(self, "tree"):
+            return dict(self.settings.column_widths)
+        return {column: int(self.tree.column(column, "width")) for column in TREE_COLUMNS}
+
+    def save_current_column_widths(self) -> None:
+        self.settings.column_widths = self.current_column_widths()
+        save_app_settings(self.current_settings())
+
     def sort_by_column(self, column: str) -> None:
         if self.sort_column == column:
             self.sort_reverse = not self.sort_reverse
@@ -257,6 +292,7 @@ class ComicRackMasterUI(tk.Tk):
             comicrack_source=self.source_var.get().strip(),
             remote_sync_target=self.remote_var.get().strip(),
             fansadox_source=self.fansadox_var.get().strip(),
+            column_widths=self.current_column_widths(),
         )
 
     def save_current_settings(self, save_archive_state: bool = True) -> None:
@@ -390,12 +426,13 @@ class ComicRackMasterUI(tk.Tk):
         noun = "archive" if count == 1 else "archives"
         self.selected_count_var.set(f"{count} {noun} selected")
 
-    def on_tree_click(self, event: tk.Event) -> None:
+    def on_tree_button_release(self, event: tk.Event) -> None:
         region = self.tree.identify("region", event.x, event.y)
         column = self.tree.identify_column(event.x)
         row_id = self.tree.identify_row(event.y)
         if region == "cell" and column == "#1" and row_id:
             self.toggle_record(row_id)
+        self.after(50, self.save_current_column_widths)
 
     def toggle_current_selection(self, _event: tk.Event | None = None) -> str:
         selected = self.tree.selection()

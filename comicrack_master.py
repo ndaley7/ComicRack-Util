@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import shutil
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ class AppSettings:
     comicrack_source: str = ""
     remote_sync_target: str = ""
     fansadox_source: str = ""
+    column_widths: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -60,10 +61,22 @@ def load_app_settings(base_dir: Path | None = None) -> AppSettings:
     except (OSError, json.JSONDecodeError):
         return AppSettings()
 
+    raw_widths = data.get("column_widths", {})
+    column_widths = {}
+    if isinstance(raw_widths, dict):
+        for key, value in raw_widths.items():
+            try:
+                width = int(value)
+            except (TypeError, ValueError):
+                continue
+            if width > 0:
+                column_widths[str(key)] = width
+
     return AppSettings(
         comicrack_source=str(data.get("comicrack_source", "")),
         remote_sync_target=str(data.get("remote_sync_target", "")),
         fansadox_source=str(data.get("fansadox_source", "")),
+        column_widths=column_widths,
     )
 
 
