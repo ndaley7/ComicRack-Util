@@ -9,6 +9,7 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Any, Callable
 
 from comicrack_master import (
     AppSettings,
@@ -74,10 +75,12 @@ class ComicRackMasterUI(tk.Tk):
         self.fansadox_var = tk.StringVar(value=self.settings.fansadox_source)
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
+        self.busy = False
+        self.action_buttons: list[ttk.Button] = []
 
         self._build_ui()
         if self.source_var.get():
-            self.after(100, self.rescan)
+            self.after(250, self.rescan)
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -167,8 +170,14 @@ class ComicRackMasterUI(tk.Tk):
         self.log_text.configure(yscrollcommand=log_scroll.set)
         log_scroll.grid(row=0, column=1, sticky="ns")
 
-        status = ttk.Label(self, textvariable=self.status_var, anchor="w", padding=(10, 0, 10, 8))
-        status.grid(row=4, column=0, sticky="ew")
+        status_frame = ttk.Frame(self, padding=(10, 0, 10, 8))
+        status_frame.grid(row=4, column=0, sticky="ew")
+        status_frame.columnconfigure(0, weight=1)
+        status = ttk.Label(status_frame, textvariable=self.status_var, anchor="w")
+        status.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        self.progress = ttk.Progressbar(status_frame, mode="indeterminate", length=220)
+        self.progress.grid(row=0, column=1, sticky="e")
+        Tooltip(self.progress, "Shows that a scan, conversion, translation, or sync operation is running.")
 
     def _add_path_row(self, parent: ttk.Frame, row: int, label_text: str, variable: tk.StringVar, tooltip: str) -> None:
         label = ttk.Label(parent, text=label_text)
@@ -185,6 +194,7 @@ class ComicRackMasterUI(tk.Tk):
         button = ttk.Button(parent, text=text, command=command)
         button.grid(row=0, column=column, padx=(0, 6), pady=2)
         Tooltip(button, tooltip)
+        self.action_buttons.append(button)
 
     def choose_directory(self, variable: tk.StringVar) -> None:
         initial_dir = variable.get() or str(Path.home())
@@ -218,25 +228,65 @@ class ComicRackMasterUI(tk.Tk):
         self.log_text.see("end")
         self.status_var.set(message.splitlines()[-1] if message else "Ready")
 
-    def run_in_worker(self, action, done_message: str = "Done") -> None:
+    def begin_busy(self, message: str) -> bool:
+        if self.busy:
+            messagebox.showinfo("ComicRack Library Master", "An operation is already running.")
+            return False
+
+        self.busy = True
+        self.status_var.set(message)
+        self.progress.start(12)
+        for button in self.action_buttons:
+            button.state(["disabled"])
+        return True
+
+    def end_busy(self) -> None:
+        self.busy = False
+        self.progress.stop()
+        for button in self.action_buttons:
+            button.state(["!disabled"])
+
+    def run_in_worker(
+        self,
+        busy_message: str,
+        action: Callable[[], Any],
+        on_success: Callable[[Any], None] | None = None,
+        done_message: str = "Done",
+        rescan_after: bool = False,
+    ) -> None:
+        if not self.begin_busy(busy_message):
+            return
+
         def worker() -> None:
             try:
-                messages = action()
+                result = action()
             except Exception as exc:
                 error = str(exc)
-                self.after(0, lambda: messagebox.showerror("ComicRack Library Master", error))
-                self.after(0, lambda: self.append_log(f"Error: {error}"))
+                self.after(0, lambda: self.finish_worker_error(error))
                 return
 
             def finish() -> None:
-                for message in messages:
-                    self.append_log(message)
-                self.append_log(done_message)
-                self.rescan()
+                if on_success is not None:
+                    on_success(result)
+                elif isinstance(result, list):
+                    for message in result:
+                        self.append_log(str(message))
+                elif result:
+                    self.append_log(str(result))
+                if done_message:
+                    self.append_log(done_message)
+                self.end_busy()
+                if rescan_after:
+                    self.after(50, self.rescan)
 
             self.after(0, finish)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def finish_worker_error(self, error: str) -> None:
+        self.end_busy()
+        messagebox.showerror("ComicRack Library Master", error)
+        self.append_log(f"Error: {error}")
 
     def rescan(self) -> None:
         self.save_current_settings(save_archive_state=False)
@@ -245,17 +295,20 @@ class ComicRackMasterUI(tk.Tk):
             messagebox.showinfo("ComicRack Library Master", "Set ComicRack Source before scanning.")
             return
 
-        try:
-            state = load_source_state(source)
-            self.records = scan_source_directory(source, self.remote_var.get().strip(), state)
-            save_source_state(source, self.records, self.current_settings())
-        except Exception as exc:
-            messagebox.showerror("ComicRack Library Master", str(exc))
-            self.append_log(f"Scan failed: {exc}")
-            return
+        settings = self.current_settings()
 
-        self.populate_tree()
-        self.append_log(f"Scanned {len(self.records)} archive(s) from {source}")
+        def action() -> list[ArchiveRecord]:
+            state = load_source_state(source)
+            records = scan_source_directory(source, settings.remote_sync_target, state)
+            save_source_state(source, records, settings)
+            return records
+
+        def on_success(records: list[ArchiveRecord]) -> None:
+            self.records = records
+            self.populate_tree()
+            self.append_log(f"Scanned {len(self.records)} archive(s) from {source}")
+
+        self.run_in_worker("Scanning archive status...", action, on_success, done_message="")
 
     def populate_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -322,6 +375,8 @@ class ComicRackMasterUI(tk.Tk):
 
     def convert_zip_to_cbz(self) -> None:
         source = self.require_source()
+        if source is None:
+            return
         script = repo_root() / "ZiptoCBZ" / "zip_to_cbz.py"
         targets = [record for record in self.selected_records() if not record.cbz]
         if not targets:
@@ -344,10 +399,12 @@ class ComicRackMasterUI(tk.Tk):
                     raise RuntimeError(f"ZiptoCBZ failed for {record.relative_path}:\n{output}")
             return messages
 
-        self.run_in_worker(action, "Zip to CBZ finished")
+        self.run_in_worker("Running Zip to CBZ...", action, done_message="Zip to CBZ finished", rescan_after=True)
 
     def create_comicinfo(self) -> None:
         source = self.require_source()
+        if source is None:
+            return
         script = repo_root() / "InfotoComicInfoxml" / "ComicInfoConverter.py"
         targets = [record for record in self.selected_records() if record.cbz]
         if not targets:
@@ -370,10 +427,17 @@ class ComicRackMasterUI(tk.Tk):
                     raise RuntimeError(f"Info -> ComicInfo.xml failed for {record.relative_path}:\n{output}")
             return messages
 
-        self.run_in_worker(action, "Info -> ComicInfo.xml finished")
+        self.run_in_worker(
+            "Creating ComicInfo.xml...",
+            action,
+            done_message="Info -> ComicInfo.xml finished",
+            rescan_after=True,
+        )
 
     def translate_selected(self) -> None:
         source = self.require_source()
+        if source is None:
+            return
         cli_dir = repo_root() / "TranslateEXGallery"
         targets = [record for record in self.selected_records() if not record.english]
         if not targets:
@@ -398,23 +462,27 @@ class ComicRackMasterUI(tk.Tk):
                     raise RuntimeError(f"TranslateEXGallery failed for {record.relative_path}:\n{output}")
             return messages
 
-        self.run_in_worker(action, "Translate selected finished")
+        self.run_in_worker("Translating selected archives...", action, done_message="Translate selected finished", rescan_after=True)
 
     def sync_selected(self) -> None:
         source = self.require_source()
-        if not self.remote_var.get().strip():
+        if source is None:
+            return
+        remote_sync_target = self.remote_var.get().strip()
+        if not remote_sync_target:
             messagebox.showinfo("ComicRack Library Master", "Set Remote Sync Target before syncing.")
             return
 
         def action() -> list[str]:
-            return sync_selected_archives(self.records, source, self.remote_var.get().strip())
+            return sync_selected_archives(self.records, source, remote_sync_target)
 
-        self.run_in_worker(action, "Sync selected finished")
+        self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
 
-    def require_source(self) -> Path:
+    def require_source(self) -> Path | None:
         source = self.source_dir_or_none()
         if source is None:
-            raise RuntimeError("Set ComicRack Source first.")
+            messagebox.showinfo("ComicRack Library Master", "Set ComicRack Source first.")
+            return None
         return source
 
     def show_help(self) -> None:

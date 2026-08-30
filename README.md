@@ -17,7 +17,9 @@ Per-archive status and checkbox selection state are stored in
 `.comicrack_master_state.json` inside the selected ComicRack Source folder.
 Use **Rescan** to force-refresh status for ZIP and CBZ files directly inside
 the source folder. Subdirectories are ignored. ZIP files are listed first, and
-newly discovered CBZ files are selected by default.
+newly discovered CBZ files are selected by default. Scans and utility actions
+run in the background, with the bottom progress bar showing when work is in
+progress.
 
 ## InfotoComicInfoxml
 

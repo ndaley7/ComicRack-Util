@@ -23,3 +23,15 @@ Actions:
 - Added regression coverage proving archives in nested folders are not listed.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
 - Created checkpoint commit for the direct-source-only scanner update.
+
+2026-08-30
+
+Prompt:
+When first booted the UI does not load any elements during initial operations. Bring up the UI as a priority, then add a loading bar at the bottom that runs if anything is in progress.
+
+Actions:
+- Refactored startup Rescan and utility actions to run through a background worker instead of blocking the Tkinter event loop.
+- Added a bottom indeterminate progress bar and status strip behavior for active scan, conversion, translation, and sync operations.
+- Disabled action buttons while background work is running to prevent overlapping operations.
+- Updated README.md to mention background work and the bottom progress bar.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
