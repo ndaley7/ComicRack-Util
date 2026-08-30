@@ -90,6 +90,8 @@ It is safe to run against filenames containing Thai, Korean, Russian,
 Japanese, Chinese, and other Unicode characters; utility output is forced to
 UTF-8 to avoid Windows console encoding failures.
 When run from the master UI, each selected archive is logged as it is processed.
+Invalid ZIP/CBZ files are moved into `_PROBLEMS` and logged to
+`_PROBLEMS\problems.log`.
 
 Run it against a directory:
 

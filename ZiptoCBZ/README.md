@@ -6,6 +6,8 @@ inside `.cbz` archives.
 Filenames containing Thai, Korean, Russian, Japanese, Chinese, and other
 Unicode characters are supported. Script output is forced to UTF-8 with a
 fallback for characters the active terminal cannot display.
+Invalid ZIP/CBZ files are moved into `_PROBLEMS` and logged to
+`_PROBLEMS\problems.log`.
 
 ## Usage
 

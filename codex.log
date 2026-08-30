@@ -110,3 +110,16 @@ Actions:
 - Updated README.md to note per-archive Zip to CBZ logging from the master UI.
 - Added tests for safe subprocess encoding configuration and invalid-archive ZiptoCBZ output without traceback.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py ZiptoCBZ\\zip_to_cbz.py InfotoComicInfoxml\\ComicInfoConverter.py`; both passed.
+
+2026-08-30
+
+Prompt:
+Instead of leaving problematic files in place, move problematic files into another folder called _PROBLEMS.
+
+Actions:
+- Updated ZiptoCBZ invalid archive handling to move bad ZIP/CBZ files into _PROBLEMS.
+- Added _PROBLEMS/problems.log entries for moved problematic archives.
+- Updated ZiptoCBZ archive discovery to ignore both Duplicates and _PROBLEMS output folders.
+- Updated README documentation and .gitignore for _PROBLEMS.
+- Added tests for invalid ZIP-after-rename and invalid CBZ problem-file moves.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py ZiptoCBZ\\zip_to_cbz.py InfotoComicInfoxml\\ComicInfoConverter.py`; both passed.

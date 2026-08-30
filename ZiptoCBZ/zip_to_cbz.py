@@ -7,10 +7,13 @@ import argparse
 import sys
 import shutil
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 
 DUPLICATES_DIR_NAME = "Duplicates"
+PROBLEMS_DIR_NAME = "_PROBLEMS"
+PROBLEMS_LOG_FILENAME = "problems.log"
 
 
 def configure_text_output() -> None:
@@ -39,13 +42,39 @@ def move_to_duplicates(file_path: Path, duplicates_dir: Path) -> Path:
     return destination
 
 
+def log_problem(problems_dir: Path, source_path: Path, destination: Path, reason: str) -> Path:
+    problems_dir.mkdir(exist_ok=True)
+    log_path = problems_dir / PROBLEMS_LOG_FILENAME
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    line = "\t".join(
+        [
+            timestamp,
+            f"reason={reason}",
+            f"source={source_path.name}",
+            f"destination={destination.name}",
+        ]
+    )
+    with log_path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(line + "\n")
+    return log_path
+
+
+def move_to_problems(file_path: Path, problems_dir: Path, reason: str) -> tuple[Path, Path]:
+    problems_dir.mkdir(exist_ok=True)
+    destination = unique_path(problems_dir / file_path.name)
+    shutil.move(str(file_path), str(destination))
+    log_path = log_problem(problems_dir, file_path, destination, reason)
+    return destination, log_path
+
+
 def matching_cbz_path(zip_path: Path) -> Path:
     return zip_path.with_suffix(".cbz")
 
 
-def is_inside_duplicates(path: Path, target_dir: Path) -> bool:
+def is_inside_output_dir(path: Path, target_dir: Path) -> bool:
+    output_dir_names = {DUPLICATES_DIR_NAME.lower(), PROBLEMS_DIR_NAME.lower()}
     relative_parts = path.relative_to(target_dir).parts
-    return any(part.lower() == DUPLICATES_DIR_NAME.lower() for part in relative_parts)
+    return any(part.lower() in output_dir_names for part in relative_parts)
 
 
 def iter_archive_files(target_dir: Path, recursive: bool, suffixes: set[str]) -> list[Path]:
@@ -56,7 +85,7 @@ def iter_archive_files(target_dir: Path, recursive: bool, suffixes: set[str]) ->
         if (
             path.is_file()
             and path.suffix.lower() in suffixes
-            and not is_inside_duplicates(path, target_dir)
+            and not is_inside_output_dir(path, target_dir)
         )
     )
 
@@ -136,7 +165,7 @@ def flattened_info(info: zipfile.ZipInfo, prefix: str) -> zipfile.ZipInfo | None
     return new_info
 
 
-def flatten_redundant_folder(archive_path: Path, duplicates_dir: Path) -> str:
+def flatten_redundant_folder(archive_path: Path, duplicates_dir: Path, problems_dir: Path) -> str:
     temp_path = archive_path.with_name(f".{archive_path.name}.tmp")
 
     try:
@@ -155,7 +184,8 @@ def flatten_redundant_folder(archive_path: Path, duplicates_dir: Path) -> str:
     except zipfile.BadZipFile:
         if temp_path.exists():
             temp_path.unlink()
-        return f"Skipped flattening invalid ZIP/CBZ archive: {archive_path}"
+        problem_path, log_path = move_to_problems(archive_path, problems_dir, "Invalid ZIP/CBZ archive")
+        return f"Moved invalid ZIP/CBZ archive to _PROBLEMS: {archive_path} -> {problem_path}; logged to {log_path}"
 
     backup_path = move_to_duplicates(archive_path, duplicates_dir)
     try:
@@ -203,18 +233,19 @@ def main() -> int:
 
     if target.is_file():
         duplicates_dir = target.parent / DUPLICATES_DIR_NAME
+        problems_dir = target.parent / PROBLEMS_DIR_NAME
         suffix = target.suffix.lower()
 
         if suffix == ".zip":
             print(convert_zip_file(target, duplicates_dir))
             cbz_path = matching_cbz_path(target)
             if cbz_path.exists():
-                print(flatten_redundant_folder(cbz_path, duplicates_dir))
+                print(flatten_redundant_folder(cbz_path, duplicates_dir, problems_dir))
             print("Processed 1 file target.")
             return 0
 
         if suffix == ".cbz":
-            print(flatten_redundant_folder(target, duplicates_dir))
+            print(flatten_redundant_folder(target, duplicates_dir, problems_dir))
             print("Processed 1 file target.")
             return 0
 
@@ -226,13 +257,14 @@ def main() -> int:
         return 1
 
     duplicates_dir = target / DUPLICATES_DIR_NAME
+    problems_dir = target / PROBLEMS_DIR_NAME
     zip_files = iter_archive_files(target, args.recursive, {".zip"})
     for zip_path in zip_files:
         print(convert_zip_file(zip_path, duplicates_dir))
 
     cbz_files = iter_archive_files(target, args.recursive, {".cbz"})
     for cbz_path in cbz_files:
-        print(flatten_redundant_folder(cbz_path, duplicates_dir))
+        print(flatten_redundant_folder(cbz_path, duplicates_dir, problems_dir))
 
     print(f"Processed {len(zip_files)} .zip file(s) and {len(cbz_files)} .cbz file(s).")
     return 0
