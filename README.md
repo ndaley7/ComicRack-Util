@@ -89,6 +89,7 @@ Local sample archives and generated sample metadata under `InfotoComicInfoxml\Sa
 It is safe to run against filenames containing Thai, Korean, Russian,
 Japanese, Chinese, and other Unicode characters; utility output is forced to
 UTF-8 to avoid Windows console encoding failures.
+When run from the master UI, each selected archive is logged as it is processed.
 
 Run it against a directory:
 

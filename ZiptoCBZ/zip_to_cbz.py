@@ -139,18 +139,23 @@ def flattened_info(info: zipfile.ZipInfo, prefix: str) -> zipfile.ZipInfo | None
 def flatten_redundant_folder(archive_path: Path, duplicates_dir: Path) -> str:
     temp_path = archive_path.with_name(f".{archive_path.name}.tmp")
 
-    with zipfile.ZipFile(archive_path, "r") as source:
-        names = source.namelist()
-        prefix = redundant_folder_prefix(archive_path, names)
-        if prefix is None:
-            return f"Archive already flat or has a different structure: {archive_path}"
+    try:
+        with zipfile.ZipFile(archive_path, "r") as source:
+            names = source.namelist()
+            prefix = redundant_folder_prefix(archive_path, names)
+            if prefix is None:
+                return f"Archive already flat or has a different structure: {archive_path}"
 
-        with zipfile.ZipFile(temp_path, "w") as destination:
-            for info in source.infolist():
-                new_info = flattened_info(info, prefix)
-                if new_info is None:
-                    continue
-                destination.writestr(new_info, source.read(info.filename))
+            with zipfile.ZipFile(temp_path, "w") as destination:
+                for info in source.infolist():
+                    new_info = flattened_info(info, prefix)
+                    if new_info is None:
+                        continue
+                    destination.writestr(new_info, source.read(info.filename))
+    except zipfile.BadZipFile:
+        if temp_path.exists():
+            temp_path.unlink()
+        return f"Skipped flattening invalid ZIP/CBZ archive: {archive_path}"
 
     backup_path = move_to_duplicates(archive_path, duplicates_dir)
     try:

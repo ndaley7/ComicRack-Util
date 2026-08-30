@@ -43,6 +43,26 @@ class ZipToCbzTests(unittest.TestCase):
                     self.assertIn("Processed 1 file target.", output)
                     self.assertTrue((source / f"{archive_stem}.cbz").exists())
 
+    def test_cli_reports_invalid_archive_without_traceback_after_rename(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            archive_path = source / "Not Really Zip.zip"
+            archive_path.write_text("not a zip file", encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(archive_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            self.assertIn("Skipped flattening invalid ZIP/CBZ archive", output)
+            self.assertNotIn("Traceback", output)
+
 
 if __name__ == "__main__":
     unittest.main()

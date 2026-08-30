@@ -277,6 +277,9 @@ class ComicRackMasterUI(tk.Tk):
         self.log_text.see("end")
         self.status_var.set(message.splitlines()[-1] if message else "Ready")
 
+    def append_log_from_worker(self, message: str) -> None:
+        self.after(0, lambda text=message: self.append_log(text))
+
     def begin_busy(self, message: str) -> bool:
         if self.busy:
             messagebox.showinfo("ComicRack Library Master", "An operation is already running.")
@@ -436,15 +439,20 @@ class ComicRackMasterUI(tk.Tk):
             return
 
         def action() -> list[str]:
-            messages = []
-            for record in targets:
+            total = len(targets)
+            failures = []
+            for index, record in enumerate(targets, start=1):
                 archive_path = source / record.relative_path
+                self.append_log_from_worker(f"Zip to CBZ [{index}/{total}]: {record.relative_path}")
                 result = run_captured_command([sys.executable, str(script), str(archive_path)])
                 output = (result.stdout + result.stderr).strip()
-                messages.append(output or f"Processed {record.relative_path}")
+                self.append_log_from_worker(output or f"Processed {record.relative_path}")
                 if result.returncode != 0:
-                    raise RuntimeError(f"ZiptoCBZ failed for {record.relative_path}:\n{output}")
-            return messages
+                    failures.append(record.relative_path)
+                    self.append_log_from_worker(f"ZiptoCBZ failed for {record.relative_path}")
+            if failures:
+                raise RuntimeError(f"ZiptoCBZ failed for {len(failures)} archive(s). Check the Run Log for details.")
+            return []
 
         self.run_in_worker("Running Zip to CBZ...", action, done_message="Zip to CBZ finished", rescan_after=True)
 
