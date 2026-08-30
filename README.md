@@ -22,6 +22,24 @@ run in the background, with the bottom progress bar showing when work is in
 progress. Use the bottom **Comic List** button to open a copyable plain-text
 list of the currently loaded comics.
 
+The **Remove Dups** button runs the `RemoveDuplicates` utility against the
+ComicRack Source folder. It compares direct-child `.zip` and `.cbz` archives by
+SHA-256 when they share the same size, moves exact duplicates into
+`_DUPLICATES`, and logs moved files to `_DUPLICATES\duplicates.log`.
+
+## RemoveDuplicates
+
+`RemoveDuplicates` moves exact duplicate ZIP/CBZ archives out of the source
+folder without deleting them.
+
+```powershell
+python .\RemoveDuplicates\remove_duplicates.py "C:\path\to\comics"
+```
+
+The script ignores subdirectories. When duplicate hashes are found, it keeps a
+preferred copy and moves the rest into `_DUPLICATES`; `.cbz` is preferred over
+`.zip`, then shorter and alphabetically earlier names are preferred.
+
 ## InfotoComicInfoxml
 
 `InfotoComicInfoxml` converts ExHentai/E-Hentai Downloader `info.txt` metadata into `ComicInfo.xml` files for comic archive readers.

@@ -124,7 +124,8 @@ class ComicRackMasterUI(tk.Tk):
         self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 4, "Add ComicInfo.xml to selected CBZ archives that contain root info.txt.")
         self._add_button(toolbar, "Translate", self.translate_selected, 5, "Run TranslateEXGallery for selected non-English archives.")
         self._add_button(toolbar, "Sync Selected", self.sync_selected, 6, "Copy selected archives to the Remote Sync Target folder.")
-        self._add_button(toolbar, "Help", self.show_help, 7, "Show a quick guide for this master UI.")
+        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 7, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
+        self._add_button(toolbar, "Help", self.show_help, 8, "Show a quick guide for this master UI.")
 
         self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
         self.selected_label.grid(row=0, column=10, sticky="e", padx=(8, 0))
@@ -481,6 +482,32 @@ class ComicRackMasterUI(tk.Tk):
             return sync_selected_archives(self.records, source, remote_sync_target)
 
         self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
+
+    def remove_duplicates(self) -> None:
+        source = self.require_source()
+        if source is None:
+            return
+        script = repo_root() / "RemoveDuplicates" / "remove_duplicates.py"
+
+        def action() -> list[str]:
+            result = subprocess.run(
+                [sys.executable, str(script), str(source)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            output = (result.stdout + result.stderr).strip()
+            messages = output.splitlines() if output else ["Remove duplicates finished."]
+            if result.returncode != 0:
+                raise RuntimeError(f"Remove duplicates failed:\n{output}")
+            return messages
+
+        self.run_in_worker(
+            "Removing duplicate archives...",
+            action,
+            done_message="Remove duplicates finished",
+            rescan_after=True,
+        )
 
     def show_logged_comics(self) -> None:
         window = tk.Toplevel(self)

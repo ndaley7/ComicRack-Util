@@ -47,3 +47,17 @@ Actions:
 - Added a shared records_as_copy_list helper and regression coverage for the copied list format.
 - Updated README.md to document the Comic List button.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
+
+2026-08-30
+
+Prompt:
+Add a remove duplicates functionality, with code stored in a subfolder of the repo, that does a hash comparison between suspected duplicates and moves them to a directory called _DUPLICATES within the source directory along with logging those that have been moved.
+
+Actions:
+- Added RemoveDuplicates/remove_duplicates.py with direct-source ZIP/CBZ duplicate detection using same-size grouping plus SHA-256 verification.
+- Moves duplicate archives into _DUPLICATES and appends moved-file details to _DUPLICATES/duplicates.log.
+- Added RemoveDuplicates README documentation.
+- Added a master UI Remove Dups button that runs the utility in the background and rescans afterward.
+- Added tests for duplicate moves, CBZ-over-ZIP keep preference, hash mismatch safety, logging, and subdirectory ignoring.
+- Added _DUPLICATES to .gitignore so moved local archives are not accidentally staged.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py RemoveDuplicates\\remove_duplicates.py`; both passed.
