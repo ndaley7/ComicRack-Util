@@ -55,6 +55,18 @@ class ComicRackMasterTests(unittest.TestCase):
 
             self.assertFalse(records[0].selected)
 
+    def test_scan_ignores_archives_in_subdirectories(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            nested = source / "Nested"
+            nested.mkdir()
+            write_archive(source / "Root.cbz", {"page.jpg": "image"})
+            write_archive(nested / "Ignored.zip", {"page.jpg": "image"})
+
+            records = scan_source_directory(source)
+
+            self.assertEqual([record.relative_path for record in records], ["Root.cbz"])
+
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:
             base = Path(base_raw)

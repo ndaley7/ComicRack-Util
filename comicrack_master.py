@@ -110,7 +110,7 @@ def iter_candidate_archives(source_dir: Path) -> list[Path]:
     return sorted(
         (
             path
-            for path in source_dir.rglob("*")
+            for path in source_dir.glob("*")
             if path.is_file()
             and path.suffix.lower() in SUPPORTED_SUFFIXES
             and STATE_FILENAME.lower() not in {part.lower() for part in path.parts}

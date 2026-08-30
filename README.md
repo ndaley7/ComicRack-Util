@@ -15,9 +15,9 @@ The UI remembers the `ComicRack Source`, `Remote Sync Target`, and
 `Fansadox Source` path fields in `master_ui_settings.json` beside the script.
 Per-archive status and checkbox selection state are stored in
 `.comicrack_master_state.json` inside the selected ComicRack Source folder.
-Use **Rescan** to force-refresh status for ZIP and CBZ files under the source
-folder. ZIP files are listed first, and newly discovered CBZ files are selected
-by default.
+Use **Rescan** to force-refresh status for ZIP and CBZ files directly inside
+the source folder. Subdirectories are ignored. ZIP files are listed first, and
+newly discovered CBZ files are selected by default.
 
 ## InfotoComicInfoxml
 

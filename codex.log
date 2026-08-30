@@ -10,4 +10,16 @@ Actions:
 - Updated README.md with the master UI entry point and persistence behavior.
 - Added unittest coverage for ZIP-first ordering, archive status detection, synced detection, default/persisted selection, and settings round trip.
 - Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
-- Created checkpoint commit `146de04` for the initial master UI implementation.
+- Created checkpoint commit `3c10218` for the initial master UI implementation.
+
+2026-08-30
+
+Prompt:
+Make sure that subdirectories within the source directory are ignored.
+
+Actions:
+- Updated archive scanning to inspect only files directly inside ComicRack Source.
+- Updated UI help/tooltip text and README wording to state that subdirectories are ignored.
+- Added regression coverage proving archives in nested folders are not listed.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
+- Created checkpoint commit for the direct-source-only scanner update.

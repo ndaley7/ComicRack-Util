@@ -154,7 +154,7 @@ class ComicRackMasterUI(tk.Tk):
         y_scroll.grid(row=0, column=1, sticky="ns")
         Tooltip(
             self.tree,
-            "Click the Use column or press Space to toggle processing. ZIP files are listed first; CBZ files are selected by default on first scan.",
+            "Click the Use column or press Space to toggle processing. Only files directly inside ComicRack Source are listed. ZIP files appear first; CBZ files are selected by default on first scan.",
         )
 
         log_frame = ttk.LabelFrame(self, text="Run Log", padding=6)
@@ -421,7 +421,7 @@ class ComicRackMasterUI(tk.Tk):
         messagebox.showinfo(
             "ComicRack Library Master Help",
             "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
-            "The list shows ZIP and CBZ archives under ComicRack Source. ZIP files appear first. "
+            "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
             "The path fields are saved in master_ui_settings.json beside this UI script.",
