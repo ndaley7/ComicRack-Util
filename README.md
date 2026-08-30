@@ -2,6 +2,23 @@
 
 Utilities for working with comic/gallery archives.
 
+## ComicRack Library Master UI
+
+`master_ui.py` is a Tkinter launcher for scanning a ComicRack source folder,
+tracking archive status, and running the utility scripts from one place.
+
+```powershell
+python .\master_ui.py
+```
+
+The UI remembers the `ComicRack Source`, `Remote Sync Target`, and
+`Fansadox Source` path fields in `master_ui_settings.json` beside the script.
+Per-archive status and checkbox selection state are stored in
+`.comicrack_master_state.json` inside the selected ComicRack Source folder.
+Use **Rescan** to force-refresh status for ZIP and CBZ files under the source
+folder. ZIP files are listed first, and newly discovered CBZ files are selected
+by default.
+
 ## InfotoComicInfoxml
 
 `InfotoComicInfoxml` converts ExHentai/E-Hentai Downloader `info.txt` metadata into `ComicInfo.xml` files for comic archive readers.

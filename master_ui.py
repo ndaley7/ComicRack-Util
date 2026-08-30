@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+"""Tkinter master UI for ComicRack library processing utilities."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+
+from comicrack_master import (
+    AppSettings,
+    ArchiveRecord,
+    load_app_settings,
+    load_source_state,
+    repo_root,
+    save_app_settings,
+    save_source_state,
+    scan_source_directory,
+    sync_selected_archives,
+    update_record_selection,
+)
+
+
+YES = "Yes"
+NO = "No"
+
+
+class Tooltip:
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self.window: tk.Toplevel | None = None
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+
+    def show(self, _event: tk.Event | None = None) -> None:
+        if self.window is not None or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.wm_geometry(f"+{x}+{y}")
+        label = ttk.Label(
+            self.window,
+            text=self.text,
+            padding=(8, 4),
+            relief="solid",
+            borderwidth=1,
+            background="#ffffe0",
+        )
+        label.pack()
+
+    def hide(self, _event: tk.Event | None = None) -> None:
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
+
+
+class ComicRackMasterUI(tk.Tk):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("ComicRack Library Master")
+        self.geometry("980x680")
+        self.minsize(860, 560)
+
+        self.records: list[ArchiveRecord] = []
+        self.settings = load_app_settings()
+        self.source_var = tk.StringVar(value=self.settings.comicrack_source)
+        self.remote_var = tk.StringVar(value=self.settings.remote_sync_target)
+        self.fansadox_var = tk.StringVar(value=self.settings.fansadox_source)
+        self.status_var = tk.StringVar(value="Ready")
+        self.selected_count_var = tk.StringVar(value="No archives selected")
+
+        self._build_ui()
+        if self.source_var.get():
+            self.after(100, self.rescan)
+
+    def _build_ui(self) -> None:
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
+
+        path_frame = ttk.LabelFrame(self, text="Library Paths", padding=10)
+        path_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 6))
+        path_frame.columnconfigure(1, weight=1)
+
+        self._add_path_row(
+            path_frame,
+            0,
+            "ComicRack Source",
+            self.source_var,
+            "Folder scanned for .zip and .cbz archives. Status is stored inside this folder.",
+        )
+        self._add_path_row(
+            path_frame,
+            1,
+            "Remote Sync Target",
+            self.remote_var,
+            "Folder used to check and copy selected archives during sync.",
+        )
+        self._add_path_row(
+            path_frame,
+            2,
+            "Fansadox Source",
+            self.fansadox_var,
+            "Reference source path reserved for Fansadox-related utilities.",
+        )
+
+        toolbar = ttk.Frame(self, padding=(10, 0, 10, 6))
+        toolbar.grid(row=1, column=0, sticky="ew")
+        toolbar.columnconfigure(10, weight=1)
+
+        self._add_button(toolbar, "Rescan", self.rescan, 0, "Force-refresh archive status from the ComicRack Source folder.")
+        self._add_button(toolbar, "Select All", self.select_all, 1, "Select every listed archive.")
+        self._add_button(toolbar, "Select None", self.select_none, 2, "Clear all archive selections.")
+        self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Run the ZiptoCBZ utility on selected ZIP archives.")
+        self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 4, "Add ComicInfo.xml to selected CBZ archives that contain root info.txt.")
+        self._add_button(toolbar, "Translate", self.translate_selected, 5, "Run TranslateEXGallery for selected non-English archives.")
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 6, "Copy selected archives to the Remote Sync Target folder.")
+        self._add_button(toolbar, "Help", self.show_help, 7, "Show a quick guide for this master UI.")
+
+        self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
+        self.selected_label.grid(row=0, column=10, sticky="e", padx=(8, 0))
+
+        list_frame = ttk.Frame(self, padding=(10, 0, 10, 4))
+        list_frame.grid(row=2, column=0, sticky="nsew")
+        list_frame.rowconfigure(0, weight=1)
+        list_frame.columnconfigure(0, weight=1)
+
+        columns = ("selected", "file", "cbz", "info", "comicinfo", "english", "synced", "error")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
+        self.tree.heading("selected", text="Use")
+        self.tree.heading("file", text="File")
+        self.tree.heading("cbz", text="CBZ")
+        self.tree.heading("info", text="Info")
+        self.tree.heading("comicinfo", text="ComicInfo")
+        self.tree.heading("english", text="ENGLISH")
+        self.tree.heading("synced", text="Synced")
+        self.tree.heading("error", text="Status")
+        self.tree.column("selected", width=54, minwidth=54, stretch=False, anchor="center")
+        self.tree.column("file", width=430, minwidth=240, stretch=True)
+        for column in ("cbz", "info", "comicinfo", "english", "synced"):
+            self.tree.column(column, width=92, minwidth=82, stretch=False, anchor="center")
+        self.tree.column("error", width=150, minwidth=100, stretch=True)
+        self.tree.bind("<ButtonRelease-1>", self.on_tree_click)
+        self.tree.bind("<space>", self.toggle_current_selection)
+
+        y_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=y_scroll.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        Tooltip(
+            self.tree,
+            "Click the Use column or press Space to toggle processing. ZIP files are listed first; CBZ files are selected by default on first scan.",
+        )
+
+        log_frame = ttk.LabelFrame(self, text="Run Log", padding=6)
+        log_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        log_frame.rowconfigure(0, weight=1)
+        log_frame.columnconfigure(0, weight=1)
+        self.log_text = tk.Text(log_frame, height=7, wrap="word")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+        log_scroll.grid(row=0, column=1, sticky="ns")
+
+        status = ttk.Label(self, textvariable=self.status_var, anchor="w", padding=(10, 0, 10, 8))
+        status.grid(row=4, column=0, sticky="ew")
+
+    def _add_path_row(self, parent: ttk.Frame, row: int, label_text: str, variable: tk.StringVar, tooltip: str) -> None:
+        label = ttk.Label(parent, text=label_text)
+        label.grid(row=row, column=0, sticky="w", padx=(0, 8), pady=3)
+        entry = ttk.Entry(parent, textvariable=variable)
+        entry.grid(row=row, column=1, sticky="ew", pady=3)
+        button = ttk.Button(parent, text="Browse...", command=lambda: self.choose_directory(variable))
+        button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=3)
+        Tooltip(label, tooltip)
+        Tooltip(entry, tooltip)
+        Tooltip(button, f"Choose the {label_text} folder.")
+
+    def _add_button(self, parent: ttk.Frame, text: str, command, column: int, tooltip: str) -> None:
+        button = ttk.Button(parent, text=text, command=command)
+        button.grid(row=0, column=column, padx=(0, 6), pady=2)
+        Tooltip(button, tooltip)
+
+    def choose_directory(self, variable: tk.StringVar) -> None:
+        initial_dir = variable.get() or str(Path.home())
+        chosen = filedialog.askdirectory(initialdir=initial_dir)
+        if chosen:
+            variable.set(chosen)
+            self.save_current_settings()
+
+    def current_settings(self) -> AppSettings:
+        return AppSettings(
+            comicrack_source=self.source_var.get().strip(),
+            remote_sync_target=self.remote_var.get().strip(),
+            fansadox_source=self.fansadox_var.get().strip(),
+        )
+
+    def save_current_settings(self, save_archive_state: bool = True) -> None:
+        self.settings = self.current_settings()
+        save_app_settings(self.settings)
+        source = self.source_dir_or_none()
+        if save_archive_state and source and source.exists():
+            save_source_state(source, self.records, self.settings)
+
+    def source_dir_or_none(self) -> Path | None:
+        raw = self.source_var.get().strip()
+        if not raw:
+            return None
+        return Path(raw).expanduser()
+
+    def append_log(self, message: str) -> None:
+        self.log_text.insert("end", message.rstrip() + "\n")
+        self.log_text.see("end")
+        self.status_var.set(message.splitlines()[-1] if message else "Ready")
+
+    def run_in_worker(self, action, done_message: str = "Done") -> None:
+        def worker() -> None:
+            try:
+                messages = action()
+            except Exception as exc:
+                error = str(exc)
+                self.after(0, lambda: messagebox.showerror("ComicRack Library Master", error))
+                self.after(0, lambda: self.append_log(f"Error: {error}"))
+                return
+
+            def finish() -> None:
+                for message in messages:
+                    self.append_log(message)
+                self.append_log(done_message)
+                self.rescan()
+
+            self.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def rescan(self) -> None:
+        self.save_current_settings(save_archive_state=False)
+        source = self.source_dir_or_none()
+        if source is None:
+            messagebox.showinfo("ComicRack Library Master", "Set ComicRack Source before scanning.")
+            return
+
+        try:
+            state = load_source_state(source)
+            self.records = scan_source_directory(source, self.remote_var.get().strip(), state)
+            save_source_state(source, self.records, self.current_settings())
+        except Exception as exc:
+            messagebox.showerror("ComicRack Library Master", str(exc))
+            self.append_log(f"Scan failed: {exc}")
+            return
+
+        self.populate_tree()
+        self.append_log(f"Scanned {len(self.records)} archive(s) from {source}")
+
+    def populate_tree(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        for record in self.records:
+            self.tree.insert(
+                "",
+                "end",
+                iid=record.relative_path,
+                values=(
+                    "[x]" if record.selected else "[ ]",
+                    record.relative_path,
+                    YES if record.cbz else NO,
+                    YES if record.has_info else NO,
+                    YES if record.has_comicinfo else NO,
+                    YES if record.english else NO,
+                    YES if record.synced else NO,
+                    record.error,
+                ),
+            )
+        self.update_selected_count()
+
+    def update_selected_count(self) -> None:
+        count = sum(1 for record in self.records if record.selected)
+        noun = "archive" if count == 1 else "archives"
+        self.selected_count_var.set(f"{count} {noun} selected")
+
+    def on_tree_click(self, event: tk.Event) -> None:
+        region = self.tree.identify("region", event.x, event.y)
+        column = self.tree.identify_column(event.x)
+        row_id = self.tree.identify_row(event.y)
+        if region == "cell" and column == "#1" and row_id:
+            self.toggle_record(row_id)
+
+    def toggle_current_selection(self, _event: tk.Event | None = None) -> str:
+        selected = self.tree.selection()
+        if selected:
+            self.toggle_record(selected[0])
+        return "break"
+
+    def toggle_record(self, relative_path: str) -> None:
+        record = next((item for item in self.records if item.relative_path == relative_path), None)
+        if record is None:
+            return
+        record.selected = not record.selected
+        update_record_selection(self.records, relative_path, record.selected)
+        self.populate_tree()
+        self.tree.selection_set(relative_path)
+        self.save_current_settings()
+
+    def select_all(self) -> None:
+        for record in self.records:
+            record.selected = True
+        self.populate_tree()
+        self.save_current_settings()
+
+    def select_none(self) -> None:
+        for record in self.records:
+            record.selected = False
+        self.populate_tree()
+        self.save_current_settings()
+
+    def selected_records(self) -> list[ArchiveRecord]:
+        return [record for record in self.records if record.selected]
+
+    def convert_zip_to_cbz(self) -> None:
+        source = self.require_source()
+        script = repo_root() / "ZiptoCBZ" / "zip_to_cbz.py"
+        targets = [record for record in self.selected_records() if not record.cbz]
+        if not targets:
+            messagebox.showinfo("ComicRack Library Master", "Select at least one ZIP archive.")
+            return
+
+        def action() -> list[str]:
+            messages = []
+            for record in targets:
+                archive_path = source / record.relative_path
+                result = subprocess.run(
+                    [sys.executable, str(script), str(archive_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                output = (result.stdout + result.stderr).strip()
+                messages.append(output or f"Processed {record.relative_path}")
+                if result.returncode != 0:
+                    raise RuntimeError(f"ZiptoCBZ failed for {record.relative_path}:\n{output}")
+            return messages
+
+        self.run_in_worker(action, "Zip to CBZ finished")
+
+    def create_comicinfo(self) -> None:
+        source = self.require_source()
+        script = repo_root() / "InfotoComicInfoxml" / "ComicInfoConverter.py"
+        targets = [record for record in self.selected_records() if record.cbz]
+        if not targets:
+            messagebox.showinfo("ComicRack Library Master", "Select at least one CBZ archive.")
+            return
+
+        def action() -> list[str]:
+            messages = []
+            for record in targets:
+                archive_path = source / record.relative_path
+                result = subprocess.run(
+                    [sys.executable, str(script), str(archive_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                output = (result.stdout + result.stderr).strip()
+                messages.append(output or f"Processed {record.relative_path}")
+                if result.returncode != 0:
+                    raise RuntimeError(f"Info -> ComicInfo.xml failed for {record.relative_path}:\n{output}")
+            return messages
+
+        self.run_in_worker(action, "Info -> ComicInfo.xml finished")
+
+    def translate_selected(self) -> None:
+        source = self.require_source()
+        cli_dir = repo_root() / "TranslateEXGallery"
+        targets = [record for record in self.selected_records() if not record.english]
+        if not targets:
+            messagebox.showinfo("ComicRack Library Master", "Select at least one non-English archive.")
+            return
+
+        def action() -> list[str]:
+            messages = []
+            for record in targets:
+                archive_path = source / record.relative_path
+                output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
+                result = subprocess.run(
+                    ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)],
+                    cwd=str(cli_dir),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                output = (result.stdout + result.stderr).strip()
+                messages.append(output or f"Processed {record.relative_path}")
+                if result.returncode != 0:
+                    raise RuntimeError(f"TranslateEXGallery failed for {record.relative_path}:\n{output}")
+            return messages
+
+        self.run_in_worker(action, "Translate selected finished")
+
+    def sync_selected(self) -> None:
+        source = self.require_source()
+        if not self.remote_var.get().strip():
+            messagebox.showinfo("ComicRack Library Master", "Set Remote Sync Target before syncing.")
+            return
+
+        def action() -> list[str]:
+            return sync_selected_archives(self.records, source, self.remote_var.get().strip())
+
+        self.run_in_worker(action, "Sync selected finished")
+
+    def require_source(self) -> Path:
+        source = self.source_dir_or_none()
+        if source is None:
+            raise RuntimeError("Set ComicRack Source first.")
+        return source
+
+    def show_help(self) -> None:
+        messagebox.showinfo(
+            "ComicRack Library Master Help",
+            "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
+            "The list shows ZIP and CBZ archives under ComicRack Source. ZIP files appear first. "
+            "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
+            "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
+            "The path fields are saved in master_ui_settings.json beside this UI script.",
+        )
+
+
+def main() -> int:
+    app = ComicRackMasterUI()
+    app.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

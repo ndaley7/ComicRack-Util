@@ -3,3 +3,6 @@
 ComicInfo.xml
 info.txt
 InfotoComicInfoxml/Samples/
+__pycache__/
+master_ui_settings.json
+.comicrack_master_state.json

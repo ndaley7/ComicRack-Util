@@ -1,0 +1,13 @@
+2026-08-30
+
+Prompt:
+Make a master Python UI for ComicRack utility workflows using the provided screenshot as layout reference. Include path fields for ComicRack Source, Remote Sync Target, and Fansadox Source; list ZIP/CBZ files with selectable rows and CBZ, Info, ComicInfo, ENGLISH, and Synced status columns; persist field values and per-entry status/selection; store archive status in the ComicRack Source folder; add Rescan, Select All, Select None, Help, hover instructions, and keep commits going.
+
+Actions:
+- Inspected repository structure and existing ZiptoCBZ, TranslateEXGallery, and InfotoComicInfoxml utilities.
+- Added shared archive scanning, state persistence, app settings persistence, selection updating, and sync-copy helpers in comicrack_master.py.
+- Added master_ui.py with a Tkinter interface inspired by the provided screenshot, including path fields, status table, utility action buttons, rescan, select all/none, help, hover tooltips, and a run log.
+- Updated README.md with the master UI entry point and persistence behavior.
+- Added unittest coverage for ZIP-first ordering, archive status detection, synced detection, default/persisted selection, and settings round trip.
+- Ran `python -m unittest discover -s tests` and `python -m py_compile comicrack_master.py master_ui.py`; both passed.
+- Created checkpoint commit `146de04` for the initial master UI implementation.
