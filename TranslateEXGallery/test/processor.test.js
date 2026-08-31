@@ -293,3 +293,92 @@ test('super-saver does not create Torii client when no images contain text', asy
   assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
   assert.equal(outputZip.readFile('Gallery/art-page.webp').toString('utf8'), 'art-page-image');
 });
+
+test('super-saver translates a page when text detection fails', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+  const outputZipPath = path.join(tempDir, 'sample.translated.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/problem.jpg', Buffer.from('problem-jpg-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Japanese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const toriiCalls = [];
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    superSaverMode: true,
+    textDetector: {
+      async hasText() {
+        throw new Error('The number of inputs does not match the model: 1 vs 0');
+      }
+    },
+    toriiClient: {
+      async translateImage({ filename }) {
+        toriiCalls.push(filename);
+        return Buffer.from('translated-problem-jpg');
+      }
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.translatedImageCount, 1);
+  assert.equal(result.skippedNoTextImageCount, 0);
+  assert.deepEqual(toriiCalls, ['Gallery/problem.jpg']);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'image-text-error').map((event) => event.filename),
+    ['Gallery/problem.jpg']
+  );
+
+  const outputZip = new AdmZip(outputZipPath);
+  assert.equal(outputZip.readFile('Gallery/problem.jpg').toString('utf8'), 'translated-problem-jpg');
+});
+
+test('gif images are kept original and not translated', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+  const outputZipPath = path.join(tempDir, 'sample.translated.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/animated.gif', Buffer.from('original-gif-image'));
+  inputZip.addFile('Gallery/page.jpg', Buffer.from('original-jpg-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Japanese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const toriiCalls = [];
+  const detectorCalls = [];
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    superSaverMode: true,
+    textDetector: {
+      async hasText({ filename }) {
+        detectorCalls.push(filename);
+        return { hasText: true, boxCount: 1, maxScore: 0.9 };
+      }
+    },
+    toriiClient: {
+      async translateImage({ filename }) {
+        toriiCalls.push(filename);
+        return Buffer.from('translated-jpg-image');
+      }
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.translatedImageCount, 1);
+  assert.equal(result.keptOriginalImageCount, 1);
+  assert.deepEqual(detectorCalls, ['Gallery/page.jpg']);
+  assert.deepEqual(toriiCalls, ['Gallery/page.jpg']);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'image-original').map((event) => event.filename),
+    ['Gallery/animated.gif']
+  );
+
+  const outputZip = new AdmZip(outputZipPath);
+  assert.equal(outputZip.readFile('Gallery/animated.gif').toString('utf8'), 'original-gif-image');
+  assert.equal(outputZip.readFile('Gallery/page.jpg').toString('utf8'), 'translated-jpg-image');
+});

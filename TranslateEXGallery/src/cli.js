@@ -40,6 +40,11 @@ function formatUsd(value) {
   }).format(value);
 }
 
+function summarizeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\s+/g, ' ').trim();
+}
+
 function printProgress(event) {
   if (event.type === 'start') {
     console.log(`Found ${event.imageCount} image(s). Source language: ${event.sourceLanguage || 'unknown'}.`);
@@ -56,6 +61,10 @@ function printProgress(event) {
   } else if (event.type === 'image-no-text') {
     const cachedText = event.cached ? ' cached' : '';
     console.log(`[${event.index}/${event.total}] No text found ${event.filename}.${cachedText}`);
+  } else if (event.type === 'image-text-error') {
+    console.warn(`[${event.index}/${event.total}] Text check failed ${event.filename}. Translating anyway: ${summarizeError(event.error)}`);
+  } else if (event.type === 'image-original') {
+    console.log(`[${event.index}/${event.total}] Keeping original ${event.filename}. ${event.reason}`);
   } else if (event.type === 'image-cached') {
     console.log(`[${event.index}/${event.total}] Reusing cached translation ${event.filename}`);
   } else if (event.type === 'image-complete') {
@@ -78,6 +87,9 @@ function printProgress(event) {
     }
     if (event.skippedNoTextImageCount > 0) {
       console.log(`Super-Saver skipped ${event.skippedNoTextImageCount} image(s) with no detected text.`);
+    }
+    if (event.keptOriginalImageCount > 0) {
+      console.log(`Kept ${event.keptOriginalImageCount} GIF image(s) original.`);
     }
   }
 }

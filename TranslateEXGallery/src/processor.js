@@ -46,6 +46,10 @@ function hasEnglishWordInFilename(filePath) {
   return /\benglish\b/i.test(path.basename(filePath));
 }
 
+function isGifImageEntry(entryName) {
+  return path.posix.extname(entryName).toLowerCase() === '.gif';
+}
+
 function sha256(bufferOrText) {
   return crypto.createHash('sha256').update(bufferOrText).digest('hex');
 }
@@ -242,8 +246,13 @@ export async function translateGalleryZip({
   let pendingImageCount = 0;
   let translatedImageCount = 0;
   let skippedNoTextImageCount = 0;
+  let keptOriginalImageCount = 0;
 
   for (const entry of imageEntries) {
+    if (isGifImageEntry(entry.entryName)) {
+      continue;
+    }
+
     const sourceBuffer = entry.getData();
     const sourceHash = sha256(sourceBuffer);
     const cachedBuffer = cachedImageBuffer(resolvedWorkDir, manifest, entry.entryName, sourceHash);
@@ -287,6 +296,18 @@ export async function translateGalleryZip({
       const entry = imageEntries[index];
       const imageBuffer = entry.getData();
       const sourceHash = sha256(imageBuffer);
+      if (isGifImageEntry(entry.entryName)) {
+        keptOriginalImageCount += 1;
+        onProgress({
+          type: 'image-original',
+          index: index + 1,
+          total: imageEntries.length,
+          filename: entry.entryName,
+          reason: 'GIF files are copied without translation.'
+        });
+        continue;
+      }
+
       if (replacements.has(entry.entryName)) {
         translatedImageCount += 1;
         onProgress({ type: 'image-cached', index: index + 1, total: imageEntries.length, filename: entry.entryName });
@@ -295,15 +316,28 @@ export async function translateGalleryZip({
 
       if (superSaverMode) {
         let detection = cachedTextDetection(manifest, entry.entryName, sourceHash);
+        let detectionFailed = false;
         if (!detection) {
           onProgress({ type: 'image-text-start', index: index + 1, total: imageEntries.length, filename: entry.entryName });
-          detection = await activeTextDetector.hasText({
-            filename: entry.entryName,
-            imageBuffer,
-            workDir: resolvedWorkDir,
-            sourceHash
-          });
-          writeCachedTextDetection(resolvedWorkDir, manifest, entry.entryName, sourceHash, detection);
+          try {
+            detection = await activeTextDetector.hasText({
+              filename: entry.entryName,
+              imageBuffer,
+              workDir: resolvedWorkDir,
+              sourceHash
+            });
+            writeCachedTextDetection(resolvedWorkDir, manifest, entry.entryName, sourceHash, detection);
+          } catch (error) {
+            detectionFailed = true;
+            detection = { hasText: true, boxCount: 0, maxScore: undefined };
+            onProgress({
+              type: 'image-text-error',
+              index: index + 1,
+              total: imageEntries.length,
+              filename: entry.entryName,
+              error
+            });
+          }
         }
 
         if (!detection.hasText) {
@@ -320,15 +354,17 @@ export async function translateGalleryZip({
           continue;
         }
 
-        onProgress({
-          type: 'image-text-detected',
-          index: index + 1,
-          total: imageEntries.length,
-          filename: entry.entryName,
-          boxCount: detection.boxCount,
-          maxScore: detection.maxScore,
-          cached: detection.cached === true
-        });
+        if (!detectionFailed) {
+          onProgress({
+            type: 'image-text-detected',
+            index: index + 1,
+            total: imageEntries.length,
+            filename: entry.entryName,
+            boxCount: detection.boxCount,
+            maxScore: detection.maxScore,
+            cached: detection.cached === true
+          });
+        }
       }
 
       if (!activeToriiClient) {
@@ -385,7 +421,8 @@ export async function translateGalleryZip({
     creditsUsed,
     estimatedCostUsd,
     translatedImageCount,
-    skippedNoTextImageCount
+    skippedNoTextImageCount,
+    keptOriginalImageCount
   });
 
   return {
@@ -395,6 +432,7 @@ export async function translateGalleryZip({
     imageCount: imageEntries.length,
     translatedImageCount,
     skippedNoTextImageCount,
+    keptOriginalImageCount,
     creditsBefore,
     creditsAfter,
     creditsUsed,

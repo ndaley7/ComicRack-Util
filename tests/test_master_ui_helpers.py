@@ -61,12 +61,17 @@ class MasterUiHelperTests(unittest.TestCase):
     def test_translate_image_progress_from_line_reads_current_image(self) -> None:
         self.assertEqual(translate_image_progress_from_line("[1/200] Translating page-001.jpg"), (1, 200, False))
         self.assertEqual(translate_image_progress_from_line("[1/200] Checking text page-001.jpg"), (1, 200, False))
+        self.assertEqual(translate_image_progress_from_line("[1/200] Text check failed page-001.jpg. Translating anyway: bad gif"), (1, 200, False))
         self.assertEqual(translate_image_progress_from_line("[1/200] Text detected page-001.jpg. Boxes: 2."), (1, 200, False))
         self.assertEqual(translate_image_progress_from_line("[2/200] Done page-002.jpg."), (2, 200, True))
         self.assertEqual(translate_image_progress_from_line("[2/200] No text found page-002.jpg."), (2, 200, True))
         self.assertEqual(
             translate_image_progress_from_line("[3/200] Reusing cached translation page-003.jpg"),
             (3, 200, True),
+        )
+        self.assertEqual(
+            translate_image_progress_from_line("[4/200] Keeping original page-004.gif. GIF files are copied without translation."),
+            (4, 200, True),
         )
         self.assertIsNone(translate_image_progress_from_line("Credits before: 100"))
 

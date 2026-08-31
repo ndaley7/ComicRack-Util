@@ -271,6 +271,7 @@ For each supported image in the archive, the tool:
 - sends the image to Torii with `target_lang=en`
 - replaces the archive entry with Torii's translated image result
 - processes images sequentially to respect Torii's rate limit
+- copies `.gif` entries unchanged instead of sending them to Torii or PaddleOCR
 - reuses cached page translations from a previous failed run when available
 - in Super-Saver mode, skips Torii uploads for uncached pages where PaddleOCR detects no text boxes
 - retries transient failures such as `429`, upstream `5xx` errors, and network timeouts

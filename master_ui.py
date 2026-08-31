@@ -147,7 +147,7 @@ def open_archive_with_default_app(path: Path | str) -> None:
 
 
 TRANSLATE_IMAGE_PROGRESS_RE = re.compile(
-    r"^\[(?P<index>\d+)/(?P<total>\d+)\]\s+(?P<action>Checking text|No text found|Text detected|Translating|Done|Reusing cached translation)\b"
+    r"^\[(?P<index>\d+)/(?P<total>\d+)\]\s+(?P<action>Checking text|Text check failed|No text found|Text detected|Translating|Done|Reusing cached translation|Keeping original)\b"
 )
 
 
@@ -158,7 +158,7 @@ def translate_image_progress_from_line(line: str) -> tuple[int, int, bool] | Non
 
     index = int(match.group("index"))
     total = int(match.group("total"))
-    completed = match.group("action") in {"Done", "Reusing cached translation", "No text found"}
+    completed = match.group("action") in {"Done", "Reusing cached translation", "No text found", "Keeping original"}
     return index, total, completed
 
 
