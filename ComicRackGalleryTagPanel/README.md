@@ -91,6 +91,13 @@ read. If you do not want the floating reader launcher, disable `Gallery Tags
 Startup Launcher` and `GalleryTagReaderLauncher` in ComicRack's Scripts
 preferences.
 
+If the startup window does not appear, run `Show Gallery Tags Launcher` from a
+selected book's Automation menu. Script hook diagnostics are written to:
+
+```text
+%APPDATA%\cYo\ComicRack Community Edition\GalleryTagPanel.log
+```
+
 If it does not appear, open preferences and make sure the script is enabled.
 
 ## Install As A .crplugin
