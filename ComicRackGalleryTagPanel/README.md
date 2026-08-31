@@ -8,6 +8,7 @@ E-H-style metadata panel:
 - tags grouped by category
 - clickable tag chips
 - matching comics table using AND filters when multiple chips are selected
+- small floating reader launcher shown by the `BookOpened` hook
 - optional smart-list helper for saved tag searches
 
 This is a framework, not a polished final plugin. The library scan, metadata
@@ -72,6 +73,12 @@ Manual install is also fine:
    ```text
    Right-click -> Automation -> GalleryTagPanel
    ```
+
+When you open a comic in the reader, `GalleryTagReaderLauncher` also shows a
+small floating `Tags` window. Click its `Tags` button to open the same grouped
+tag panel for the comic currently being read. If you do not want the floating
+reader launcher, disable `GalleryTagReaderLauncher` in ComicRack's Scripts
+preferences.
 
 If it does not appear, open preferences and make sure the script is enabled.
 

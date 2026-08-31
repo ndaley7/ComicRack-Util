@@ -68,6 +68,9 @@ TAG_COLORS = {
 }
 
 
+OPEN_PANELS = []
+
+
 def get_library_books(seed_books):
     try:
         return list(ComicRack.App.GetLibraryBooks())
@@ -109,6 +112,18 @@ def open_book(book):
             pass
 
     show_book_info(book)
+
+
+def remember_panel(form):
+    OPEN_PANELS.append(form)
+
+    def remove_panel(sender, event):
+        try:
+            OPEN_PANELS.remove(sender)
+        except ValueError:
+            pass
+
+    form.FormClosed += remove_panel
 
 
 class GalleryTagPanelForm(Form):
@@ -346,6 +361,10 @@ class GalleryTagPanelForm(Form):
 
 
 def GalleryTagPanel(books):
+    show_gallery_tag_panel(books, modal=True)
+
+
+def show_gallery_tag_panel(books, modal=True):
     selected = list(books or [])
     if not selected:
         MessageBox.Show("Select at least one comic first.", "Gallery Tag Panel")
@@ -353,7 +372,15 @@ def GalleryTagPanel(books):
 
     library = get_library_books(selected)
     form = GalleryTagPanelForm(selected, library)
+    if modal:
+        try:
+            form.ShowDialog(ComicRack.MainWindow)
+        except Exception:
+            form.ShowDialog()
+        return
+
+    remember_panel(form)
     try:
-        form.ShowDialog(ComicRack.MainWindow)
+        form.Show(ComicRack.MainWindow)
     except Exception:
-        form.ShowDialog()
+        form.Show()
