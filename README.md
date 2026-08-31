@@ -77,6 +77,9 @@ original disappears from the list and the new translated archive is added.
 By default, Translate skips archives whose `info.txt` contains
 `Category: Artist CG` or `Category: Game CG`; check **Artist/Game CG** beside
 the Translate button to include those galleries.
+While translating, the bottom progress bar switches to the current archive's
+image count, such as `(1/200)`, and advances as page translations complete or
+cached pages are reused.
 
 Double-click a comic in the table to open it with the Windows app associated
 with that archive type.

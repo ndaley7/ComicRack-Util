@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,39 @@ def run_captured_command(command: list[str], cwd: Path | None = None) -> subproc
     )
 
 
+def run_streaming_command(
+    command: list[str],
+    cwd: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if not command:
+        raise ValueError("Command cannot be empty.")
+
+    resolved_command = [resolve_command_executable(command[0]), *command[1:]]
+    process = subprocess.Popen(
+        resolved_command,
+        cwd=str(cwd) if cwd is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=subprocess_environment(),
+    )
+    output_lines: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        text = line.rstrip("\r\n")
+        output_lines.append(text)
+        if on_line is not None:
+            on_line(text)
+    returncode = process.wait()
+    stdout = "\n".join(output_lines)
+    if stdout:
+        stdout += "\n"
+    return subprocess.CompletedProcess(resolved_command, returncode, stdout=stdout, stderr="")
+
+
 def file_signature(path: Path) -> tuple[int, int] | None:
     try:
         stat = path.stat()
@@ -109,6 +143,22 @@ def open_archive_with_default_app(path: Path | str) -> None:
     if not callable(startfile):
         raise RuntimeError("Opening comics from the UI is only supported on Windows.")
     startfile(str(path))
+
+
+TRANSLATE_IMAGE_PROGRESS_RE = re.compile(
+    r"^\[(?P<index>\d+)/(?P<total>\d+)\]\s+(?P<action>Translating|Done|Reusing cached translation)\b"
+)
+
+
+def translate_image_progress_from_line(line: str) -> tuple[int, int, bool] | None:
+    match = TRANSLATE_IMAGE_PROGRESS_RE.match(line)
+    if not match:
+        return None
+
+    index = int(match.group("index"))
+    total = int(match.group("total"))
+    completed = match.group("action") != "Translating"
+    return index, total, completed
 
 
 class Tooltip:
@@ -158,6 +208,7 @@ class ComicRackMasterUI(tk.Tk):
         self.translate_cg_var = tk.BooleanVar(value=self.settings.translate_cg_galleries)
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
+        self.progress_text_var = tk.StringVar(value="")
         self.busy = False
         self.action_buttons: list[ttk.Button] = []
         self.sort_column: str | None = None
@@ -264,9 +315,14 @@ class ComicRackMasterUI(tk.Tk):
         list_button = ttk.Button(status_frame, text="Comic List", command=self.show_logged_comics)
         list_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
         Tooltip(list_button, "Open a copyable list of every comic currently loaded in the table.")
-        self.progress = ttk.Progressbar(status_frame, mode="indeterminate", length=220)
-        self.progress.grid(row=0, column=2, sticky="e")
-        Tooltip(self.progress, "Shows that a scan, conversion, translation, or sync operation is running.")
+        progress_frame = ttk.Frame(status_frame, width=220, height=22)
+        progress_frame.grid(row=0, column=2, sticky="e")
+        progress_frame.grid_propagate(False)
+        self.progress = ttk.Progressbar(progress_frame, mode="indeterminate", length=220)
+        self.progress.place(relx=0, rely=0, relwidth=1, relheight=1)
+        progress_label = ttk.Label(progress_frame, textvariable=self.progress_text_var, anchor="center")
+        progress_label.place(relx=0, rely=0, relwidth=1, relheight=1)
+        Tooltip(progress_frame, "Shows that a scan, conversion, translation, or sync operation is running.")
 
     def _add_path_row(self, parent: ttk.Frame, row: int, label_text: str, variable: tk.StringVar, tooltip: str) -> None:
         label = ttk.Label(parent, text=label_text)
@@ -357,6 +413,14 @@ class ComicRackMasterUI(tk.Tk):
     def append_log_from_worker(self, message: str) -> None:
         self.after(0, lambda text=message: self.append_log(text))
 
+    def set_progress(self, value: int, maximum: int, text: str) -> None:
+        self.progress.stop()
+        self.progress.configure(mode="determinate", maximum=max(maximum, 1), value=max(value, 0))
+        self.progress_text_var.set(text)
+
+    def set_progress_from_worker(self, value: int, maximum: int, text: str) -> None:
+        self.after(0, lambda: self.set_progress(value, maximum, text))
+
     def begin_busy(self, message: str) -> bool:
         if self.busy:
             messagebox.showinfo("ComicRack Library Master", "An operation is already running.")
@@ -364,6 +428,8 @@ class ComicRackMasterUI(tk.Tk):
 
         self.busy = True
         self.status_var.set(message)
+        self.progress_text_var.set("")
+        self.progress.configure(mode="indeterminate", value=0)
         self.progress.start(12)
         for button in self.action_buttons:
             button.state(["disabled"])
@@ -372,6 +438,8 @@ class ComicRackMasterUI(tk.Tk):
     def end_busy(self) -> None:
         self.busy = False
         self.progress.stop()
+        self.progress.configure(mode="indeterminate", value=0)
+        self.progress_text_var.set("")
         for button in self.action_buttons:
             button.state(["!disabled"])
 
@@ -614,12 +682,25 @@ class ComicRackMasterUI(tk.Tk):
                 output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
                 output_before = file_signature(output_path)
                 self.append_log_from_worker(f"Translate [{index}/{total}]: {record.relative_path}")
-                result = run_captured_command(
+
+                def on_translate_line(line: str) -> None:
+                    self.append_log_from_worker(line)
+                    progress = translate_image_progress_from_line(line)
+                    if progress is None:
+                        return
+                    image_index, image_total, completed = progress
+                    progress_value = image_index if completed else image_index - 1
+                    self.set_progress_from_worker(progress_value, image_total, f"({image_index}/{image_total})")
+
+                self.set_progress_from_worker(0, 1, "")
+                result = run_streaming_command(
                     ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)],
                     cwd=cli_dir,
+                    on_line=on_translate_line,
                 )
                 output = (result.stdout + result.stderr).strip()
-                self.append_log_from_worker(output or f"Processed {record.relative_path}")
+                if not output:
+                    self.append_log_from_worker(f"Processed {record.relative_path}")
                 if result.returncode != 0:
                     self.append_log_from_worker(f"TranslateEXGallery failed for {record.relative_path}")
                     raise RuntimeError(f"TranslateEXGallery failed for {record.relative_path}:\n{output}")
@@ -728,6 +809,7 @@ class ComicRackMasterUI(tk.Tk):
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
             "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
+            "During translation, the bottom progress bar shows the current image count for the active archive.\n\n"
             "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
             "The path fields are saved in master_ui_settings.json beside this UI script.",
