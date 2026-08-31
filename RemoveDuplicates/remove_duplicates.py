@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ DUPLICATES_DIR_NAME = "_DUPLICATES"
 LOG_FILENAME = "duplicates.log"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 CHUNK_SIZE = 1024 * 1024
+COPY_SUFFIX_RE = re.compile(r"^(?P<base>.+?)\s*\((?P<copy_number>[1-9]\d*)\)$")
 
 
 def configure_text_output() -> None:
@@ -72,6 +74,17 @@ def keeper_sort_key(path: Path) -> tuple[int, int, str]:
     return (suffix_rank, len(path.stem), path.name.lower())
 
 
+def numbered_copy_base_name(path: Path) -> str | None:
+    match = COPY_SUFFIX_RE.match(path.stem)
+    if not match:
+        return None
+
+    base = match.group("base").rstrip()
+    if not base:
+        return None
+    return f"{base}{path.suffix}"
+
+
 def find_duplicate_groups(source_dir: Path) -> list[tuple[Path, list[Path], str]]:
     by_size: dict[int, list[Path]] = {}
     for archive_path in iter_archive_files(source_dir):
@@ -91,6 +104,28 @@ def find_duplicate_groups(source_dir: Path) -> list[tuple[Path, list[Path], str]
                 continue
             ordered = sorted(same_hash_paths, key=keeper_sort_key)
             groups.append((ordered[0], ordered[1:], digest))
+
+    return groups
+
+
+def find_numbered_copy_groups(source_dir: Path, ignored_paths: set[Path]) -> list[tuple[Path, list[Path], str]]:
+    archive_paths = iter_archive_files(source_dir)
+    archive_by_name = {path.name.lower(): path for path in archive_paths}
+    groups: list[tuple[Path, list[Path], str]] = []
+
+    for archive_path in archive_paths:
+        if archive_path in ignored_paths:
+            continue
+
+        base_name = numbered_copy_base_name(archive_path)
+        if base_name is None:
+            continue
+
+        keeper = archive_by_name.get(base_name.lower())
+        if keeper is None or keeper in ignored_paths or keeper == archive_path:
+            continue
+
+        groups.append((keeper, [archive_path], sha256_file(archive_path)))
 
     return groups
 
@@ -145,6 +180,22 @@ def move_duplicate_archives(source_dir: Path, dry_run: bool = False) -> list[str
             action = "Would move" if dry_run else "Moved"
             messages.append(f"{action} duplicate {duplicate_path.name} -> {destination.name}; kept {keeper.name}")
 
+    planned_sources = {move.source for move in moves}
+    for keeper, duplicate_paths, digest in find_numbered_copy_groups(source_dir, planned_sources):
+        for duplicate_path in duplicate_paths:
+            destination = unique_path(duplicates_dir / duplicate_path.name)
+            move = DuplicateMove(
+                source=duplicate_path,
+                destination=destination,
+                keeper=keeper,
+                sha256=digest,
+                size=duplicate_path.stat().st_size,
+            )
+            moves.append(move)
+            planned_sources.add(duplicate_path)
+            action = "Would move" if dry_run else "Moved"
+            messages.append(f"{action} duplicate {duplicate_path.name} -> {destination.name}; kept {keeper.name}")
+
     if not moves:
         return ["No duplicate archives found."]
 
@@ -164,7 +215,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Compare direct-child .zip/.cbz archives by size and SHA-256, then "
-            "move duplicate matches into a _DUPLICATES folder."
+            "move duplicate matches and numbered copies into a _DUPLICATES folder."
         )
     )
     parser.add_argument("source", help="ComicRack source directory to inspect.")

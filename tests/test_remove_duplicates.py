@@ -69,6 +69,35 @@ class RemoveDuplicatesTests(unittest.TestCase):
             self.assertEqual(messages, ["No duplicate archives found."])
             self.assertTrue((nested / "NestedCopy.cbz").exists())
 
+    def test_move_duplicate_archives_moves_numbered_download_copies_when_base_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Comic.zip", {"page.jpg": "original"})
+            write_archive(source / "Comic(1).zip", {"page.jpg": "download copy with different zip bytes"})
+            write_archive(source / "Comic (2).zip", {"page.jpg": "another download copy with different zip bytes"})
+
+            messages = move_duplicate_archives(source)
+
+            duplicates_dir = source / DUPLICATES_DIR_NAME
+            self.assertTrue((source / "Comic.zip").exists())
+            self.assertFalse((source / "Comic(1).zip").exists())
+            self.assertFalse((source / "Comic (2).zip").exists())
+            self.assertTrue((duplicates_dir / "Comic(1).zip").exists())
+            self.assertTrue((duplicates_dir / "Comic (2).zip").exists())
+            self.assertIn("Moved duplicate Comic(1).zip", "\n".join(messages))
+            self.assertIn("Moved duplicate Comic (2).zip", "\n".join(messages))
+
+    def test_move_duplicate_archives_keeps_numbered_copy_when_base_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Comic(1).zip", {"page.jpg": "only copy"})
+
+            messages = move_duplicate_archives(source)
+
+            self.assertEqual(messages, ["No duplicate archives found."])
+            self.assertTrue((source / "Comic(1).zip").exists())
+            self.assertFalse((source / DUPLICATES_DIR_NAME).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
