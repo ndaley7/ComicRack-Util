@@ -1,14 +1,8 @@
-#@Name Gallery Tags Startup Launcher
-#@Key GalleryTagStartupLauncher
-#@Hook Startup
-#@Enabled true
-#@Description Shows the floating Tags launcher when ComicRack starts.
-
 import os
 import sys
 
 import clr
-clr.AddReference("System.Windows.Forms")
+clr.AddReferenceByPartialName("System.Windows.Forms")
 from System.Windows.Forms import Timer
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ""
@@ -34,6 +28,11 @@ def show_startup_launcher():
         debug_exception("GalleryTagStartupLauncher failed")
 
 
+#@Name Gallery Tags Startup Launcher
+#@Key GalleryTagStartupLauncher
+#@Hook Startup
+#@Enabled true
+#@Description Shows the floating Tags launcher when ComicRack starts.
 def GalleryTagStartupLauncher():
     global STARTUP_TIMER
 

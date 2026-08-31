@@ -1,15 +1,9 @@
-#@Name GalleryTagPanel
-#@Key GalleryTagPanel
-#@Hook Books
-#@Enabled true
-#@Description E-H style tag browser panel for the selected comic.
-
 import clr
 import os
 import sys
-clr.AddReference("System")
-clr.AddReference("System.Drawing")
-clr.AddReference("System.Windows.Forms")
+clr.AddReferenceByPartialName("System")
+clr.AddReferenceByPartialName("System.Drawing")
+clr.AddReferenceByPartialName("System.Windows.Forms")
 
 from System.Diagnostics import Process
 from System.Drawing import Color, Font, FontStyle, Size
@@ -366,6 +360,11 @@ class GalleryTagPanelForm(Form):
                 open_book(book)
 
 
+#@Name GalleryTagPanel
+#@Key GalleryTagPanel
+#@Hook Books
+#@Enabled true
+#@Description E-H style tag browser panel for the selected comic.
 def GalleryTagPanel(books):
     show_gallery_tag_panel(books, modal=True)
 

@@ -1,15 +1,9 @@
-#@Name GalleryTagReaderLauncher
-#@Key GalleryTagReaderLauncher
-#@Hook BookOpened
-#@Enabled true
-#@Description Shows a small floating Tags launcher while reading.
-
 import clr
 import os
 import sys
 import traceback
-clr.AddReference("System.Drawing")
-clr.AddReference("System.Windows.Forms")
+clr.AddReferenceByPartialName("System.Drawing")
+clr.AddReferenceByPartialName("System.Windows.Forms")
 
 from System.Drawing import Font, FontStyle, Size
 from System.Windows.Forms import (
@@ -132,6 +126,11 @@ def ensure_launcher():
     return LAUNCHER
 
 
+#@Name GalleryTagReaderLauncher
+#@Key GalleryTagReaderLauncher
+#@Hook BookOpened
+#@Enabled true
+#@Description Shows a small floating Tags launcher while reading.
 def GalleryTagReaderLauncher(book):
     debug_log("BookOpened hook called")
     if book is None:
