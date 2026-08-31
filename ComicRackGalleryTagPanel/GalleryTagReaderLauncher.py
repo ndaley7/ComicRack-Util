@@ -1,11 +1,10 @@
 import clr
-import os
-import sys
-import traceback
 clr.AddReferenceByPartialName("System.Drawing")
 clr.AddReferenceByPartialName("System.Windows.Forms")
 
+from System import Environment
 from System.Drawing import Font, FontStyle, Size
+from System.IO import Directory, File, Path
 from System.Windows.Forms import (
     Button,
     DockStyle,
@@ -17,10 +16,6 @@ from System.Windows.Forms import (
     Padding,
 )
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ""
-if SCRIPT_DIR and SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
-
 from GalleryTagPanel import show_gallery_tag_panel
 from gallery_tag_core import title_for_book
 
@@ -30,22 +25,20 @@ LAUNCHER = None
 
 def debug_log(message):
     try:
-        root = os.path.join(
-            os.environ.get("APPDATA", os.path.expanduser("~")),
+        root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "cYo",
             "ComicRack Community Edition",
         )
-        if not os.path.isdir(root):
-            root = SCRIPT_DIR or os.getcwd()
-        path = os.path.join(root, "GalleryTagPanel.log")
-        with open(path, "a") as handle:
-            handle.write(message + "\n")
+        Directory.CreateDirectory(root)
+        path = Path.Combine(root, "GalleryTagPanel.log")
+        File.AppendAllText(path, unicode(message) + Environment.NewLine)
     except Exception:
         pass
 
 
-def debug_exception(context):
-    debug_log(context + "\n" + traceback.format_exc())
+def debug_exception(context, error):
+    debug_log(context + "\n" + unicode(error))
 
 
 class ReaderTagLauncher(Form):
@@ -119,8 +112,8 @@ def ensure_launcher():
         except Exception:
             try:
                 LAUNCHER.Show()
-            except Exception:
-                debug_exception("Could not show Gallery Tag launcher")
+            except Exception as error:
+                debug_exception("Could not show Gallery Tag launcher", error)
                 raise
 
     return LAUNCHER
@@ -144,8 +137,8 @@ def GalleryTagReaderLauncher(book):
             launcher.Activate()
         except Exception:
             pass
-    except Exception:
-        debug_exception("GalleryTagReaderLauncher failed")
+    except Exception as error:
+        debug_exception("GalleryTagReaderLauncher failed", error)
 
 
 def BookHasBeenOpened(book):

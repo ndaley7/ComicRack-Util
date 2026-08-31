@@ -3,9 +3,6 @@
 # This file is intentionally IronPython 2.7 friendly so it can run inside
 # ComicRack / ComicRack Community Edition.
 
-import re
-
-
 TAG_PREFIXES = {
     "parody": "Parody-",
     "character": "Character-",
@@ -71,7 +68,7 @@ def safe_text(value):
 
 
 def normalize(value):
-    return re.sub(r"\s+", " ", safe_text(value)).strip().lower()
+    return " ".join(safe_text(value).split()).lower()
 
 
 def split_values(value):
@@ -79,11 +76,11 @@ def split_values(value):
     if not text:
         return []
 
-    parts = re.split(r"[,;|]", text)
+    parts = text.replace(";", ",").replace("|", ",").split(",")
     result = []
     seen = set()
     for part in parts:
-        cleaned = re.sub(r"\s+", " ", part).strip()
+        cleaned = " ".join(part.split())
         key = normalize(cleaned)
         if cleaned and key not in seen:
             seen.add(key)
@@ -109,7 +106,7 @@ def clean_gallery_tag(raw_tag):
     text = safe_text(raw_tag)
     if "|" in text:
         text = text.split("|", 1)[0].strip()
-    return re.sub(r"\s+", " ", text).strip()
+    return " ".join(text.split())
 
 
 def add_tag(tag_map, category, value):

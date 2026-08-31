@@ -1,27 +1,17 @@
-import os
-import sys
-import traceback
-
-
-SCRIPT_DIR = globals().get("ScriptPath", "")
-if not SCRIPT_DIR and "__file__" in globals():
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-if SCRIPT_DIR and SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
+from System import Environment
+from System.IO import Directory, File, Path
 
 
 def startup_log(message):
     try:
-        root = os.path.join(
-            os.environ.get("APPDATA", SCRIPT_DIR or os.getcwd()),
+        root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "cYo",
             "ComicRack Community Edition",
         )
-        if not os.path.isdir(root):
-            root = SCRIPT_DIR or os.getcwd()
-        path = os.path.join(root, "GalleryTagPanel.log")
-        with open(path, "a") as handle:
-            handle.write(str(message) + "\n")
+        Directory.CreateDirectory(root)
+        path = Path.Combine(root, "GalleryTagPanel.log")
+        File.AppendAllText(path, unicode(message) + Environment.NewLine)
     except Exception:
         pass
 
@@ -46,8 +36,8 @@ def GalleryTagStartupLauncher():
         except Exception:
             pass
         startup_log("Startup launcher shown")
-    except Exception:
-        startup_log("GalleryTagStartupLauncher failed\n" + traceback.format_exc())
+    except Exception as error:
+        startup_log("GalleryTagStartupLauncher failed\n" + unicode(error))
 
 
 #@Name Show Gallery Tags Launcher
@@ -70,5 +60,5 @@ def GalleryTagShowLauncher(books):
             launcher.Activate()
         except Exception:
             pass
-    except Exception:
-        startup_log("GalleryTagShowLauncher failed\n" + traceback.format_exc())
+    except Exception as error:
+        startup_log("GalleryTagShowLauncher failed\n" + unicode(error))
