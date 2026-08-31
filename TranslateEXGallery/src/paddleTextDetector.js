@@ -7,6 +7,25 @@ import { fileURLToPath } from 'node:url';
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DETECTOR_SCRIPT = path.resolve(MODULE_DIR, '..', 'scripts', 'paddle_text_detector.py');
 
+function defaultPythonCommand() {
+  if (process.env.PADDLEOCR_PYTHON) {
+    return [process.env.PADDLEOCR_PYTHON];
+  }
+  if (process.platform === 'win32') {
+    const localPython313 = process.env.LOCALAPPDATA
+      ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe')
+      : '';
+    if (localPython313 && fs.existsSync(localPython313)) {
+      return [localPython313];
+    }
+    return ['py', '-3.13'];
+  }
+  if (process.env.PYTHON) {
+    return [process.env.PYTHON];
+  }
+  return ['python3'];
+}
+
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -19,12 +38,13 @@ function detectionImagePath(workDir, filename, imageBuffer, sourceHash) {
 
 export class PaddleOcrTextDetector {
   constructor({
-    pythonExecutable = process.env.PADDLEOCR_PYTHON || process.env.PYTHON || 'python',
+    pythonCommand,
+    pythonExecutable,
     detectorScript = DEFAULT_DETECTOR_SCRIPT,
     minScore = 0.6,
     timeoutMs = 180000
   } = {}) {
-    this.pythonExecutable = pythonExecutable;
+    this.pythonCommand = pythonCommand ?? (pythonExecutable ? [pythonExecutable] : defaultPythonCommand());
     this.detectorScript = detectorScript;
     this.minScore = minScore;
     this.timeoutMs = timeoutMs;
@@ -82,7 +102,9 @@ export class PaddleOcrTextDetector {
       return;
     }
 
-    this.process = spawn(this.pythonExecutable, [
+    const [pythonExecutableName, ...pythonArgs] = this.pythonCommand;
+    this.process = spawn(pythonExecutableName, [
+      ...pythonArgs,
       this.detectorScript,
       '--jsonl',
       '--min-score',
