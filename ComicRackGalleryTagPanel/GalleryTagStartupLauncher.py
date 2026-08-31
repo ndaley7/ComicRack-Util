@@ -1,31 +1,32 @@
 import os
 import sys
+import traceback
 
-import clr
-clr.AddReferenceByPartialName("System.Windows.Forms")
-from System.Windows.Forms import Timer
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ""
+SCRIPT_DIR = globals().get("ScriptPath", "")
+if not SCRIPT_DIR and "__file__" in globals():
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR and SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from GalleryTagReaderLauncher import debug_exception, debug_log, ensure_launcher
 
-
-STARTUP_TIMER = None
-
-
-def show_startup_launcher():
+def startup_log(message):
     try:
-        launcher = ensure_launcher()
-        launcher.wait_for_book()
-        try:
-            launcher.Activate()
-        except Exception:
-            pass
-        debug_log("Startup launcher shown")
+        root = os.path.join(
+            os.environ.get("APPDATA", SCRIPT_DIR or os.getcwd()),
+            "cYo",
+            "ComicRack Community Edition",
+        )
+        if not os.path.isdir(root):
+            root = SCRIPT_DIR or os.getcwd()
+        path = os.path.join(root, "GalleryTagPanel.log")
+        with open(path, "a") as handle:
+            handle.write(str(message) + "\n")
     except Exception:
-        debug_exception("GalleryTagStartupLauncher failed")
+        pass
+
+
+startup_log("GalleryTagStartupLauncher module loading")
 
 
 #@Name Gallery Tags Startup Launcher
@@ -34,26 +35,19 @@ def show_startup_launcher():
 #@Enabled true
 #@Description Shows the floating Tags launcher when ComicRack starts.
 def GalleryTagStartupLauncher():
-    global STARTUP_TIMER
+    startup_log("Startup hook called")
+    try:
+        from GalleryTagReaderLauncher import ensure_launcher
 
-    debug_log("Startup hook called")
-    STARTUP_TIMER = Timer()
-    STARTUP_TIMER.Interval = 1500
-
-    def timer_tick(sender, event):
-        global STARTUP_TIMER
+        launcher = ensure_launcher()
+        launcher.wait_for_book()
         try:
-            sender.Stop()
-            show_startup_launcher()
-        finally:
-            try:
-                sender.Dispose()
-            except Exception:
-                pass
-            STARTUP_TIMER = None
-
-    STARTUP_TIMER.Tick += timer_tick
-    STARTUP_TIMER.Start()
+            launcher.Activate()
+        except Exception:
+            pass
+        startup_log("Startup launcher shown")
+    except Exception:
+        startup_log("GalleryTagStartupLauncher failed\n" + traceback.format_exc())
 
 
 #@Name Show Gallery Tags Launcher
@@ -62,8 +56,10 @@ def GalleryTagStartupLauncher():
 #@Enabled true
 #@Description Shows the floating Tags launcher for the selected comic.
 def GalleryTagShowLauncher(books):
-    debug_log("Manual launcher hook called")
+    startup_log("Manual launcher hook called")
     try:
+        from GalleryTagReaderLauncher import ensure_launcher
+
         selected = list(books or [])
         launcher = ensure_launcher()
         if selected:
@@ -75,4 +71,4 @@ def GalleryTagShowLauncher(books):
         except Exception:
             pass
     except Exception:
-        debug_exception("GalleryTagShowLauncher failed")
+        startup_log("GalleryTagShowLauncher failed\n" + traceback.format_exc())
