@@ -24,10 +24,50 @@ same heading again reverses the sort. Drag table heading borders to resize
 columns; those widths persist between runs. Use the bottom **Comic List** button
 to open a copyable plain-text list of the currently loaded comics.
 
+## ComicRack Gallery Tag Panel
+
+`ComicRackGalleryTagPanel` is an experimental ComicRack / ComicRack Community
+Edition script framework for an E-H-style metadata panel. It shows the selected
+comic's cover, title, common ComicInfo metadata, grouped tag chips, and a
+matching-comics table. Click one tag to find other comics with that tag; click
+more tags to narrow the result set with AND matching.
+
+Install it by copying the `ComicRackGalleryTagPanel` folder into:
+
+```text
+%APPDATA%\cYo\ComicRack Community Edition\Scripts\
+```
+
+or, for classic ComicRack:
+
+```text
+%APPDATA%\cYo\ComicRack\Scripts\
+```
+
+Then restart ComicRack, select a comic, and run
+`Right-click -> Automation -> GalleryTagPanel`. See
+`ComicRackGalleryTagPanel\README.md` for packaging it as a `.crplugin` and for
+the smart-list helper.
+
+You can also install it with the helper script:
+
+```powershell
+python .\install_gallery_tag_panel.py
+```
+
 The **Remove Dups** button runs the `RemoveDuplicates` utility against the
 ComicRack Source folder. It compares direct-child `.zip` and `.cbz` archives by
 SHA-256 when they share the same size, moves exact duplicates into
-`_DUPLICATES`, and logs moved files to `_DUPLICATES\duplicates.log`.
+`_DUPLICATES`, also catches numbered copies like `Example(1).zip` when
+`Example.zip` is present, and logs moved files to `_DUPLICATES\duplicates.log`.
+
+When **Translate** finishes an archive from the master UI and creates a new
+`-translatedENG` archive, the original archive is moved into a `Translated`
+subfolder. The UI then rescans the ComicRack Source folder, so the moved
+original disappears from the list and the new translated archive is added.
+
+Double-click a comic in the table to open it with the Windows app associated
+with that archive type.
 
 ## RemoveDuplicates
 
@@ -40,7 +80,9 @@ python .\RemoveDuplicates\remove_duplicates.py "C:\path\to\comics"
 
 The script ignores subdirectories. When duplicate hashes are found, it keeps a
 preferred copy and moves the rest into `_DUPLICATES`; `.cbz` is preferred over
-`.zip`, then shorter and alphabetically earlier names are preferred.
+`.zip`, then shorter and alphabetically earlier names are preferred. Numbered
+download copies such as `Example(1).zip` or `Example (2).cbz` are moved only
+when the matching unsuffixed archive exists.
 
 ## InfotoComicInfoxml
 
@@ -79,6 +121,8 @@ python .\InfotoComicInfoxml\ComicInfoConverter.py "D:\Comics\Incoming" --recursi
 ```
 
 The converter maps gallery metadata into ComicInfo fields such as `Title`, `Series`, `Writer`, `Genre`, `Summary`, `Notes`, `Web`, `PageCount`, `LanguageISO`, `Manga`, `AgeRating`, `Characters`, `Tags`, and posted date fields.
+
+Each successful conversion also updates `UniversalTagBank.xml` in the source directory. The tag bank stores every newly encountered source tag under its original category, with categories and tags sorted for reuse by future tools.
 
 Some source `info.txt` tags may contain sensitive classification terminology. To keep the repository source friendlier for GitHub browsing, those classification trigger terms are ROT13-encoded in the script and decoded only at runtime. This does not encrypt or hide generated metadata; it only avoids storing the raw trigger terms as readable source-code literals.
 
