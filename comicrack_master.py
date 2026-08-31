@@ -14,6 +14,7 @@ from typing import Any
 APP_CONFIG_FILENAME = "master_ui_settings.json"
 STATE_FILENAME = ".comicrack_master_state.json"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
+TRANSLATED_DIR_NAME = "Translated"
 
 
 @dataclass
@@ -138,6 +139,25 @@ def normalized_archive_name(name: str) -> str:
 
 def archive_basename(name: str) -> str:
     return Path(normalized_archive_name(name)).name.lower()
+
+
+def unique_destination_path(destination: Path) -> Path:
+    if not destination.exists():
+        return destination
+
+    for index in range(1, 10000):
+        candidate = destination.with_name(f"{destination.stem} ({index}){destination.suffix}")
+        if not candidate.exists():
+            return candidate
+
+    raise FileExistsError(f"Could not find an available destination for: {destination}")
+
+
+def move_source_archive_to_translated_folder(archive_path: Path) -> Path:
+    translated_dir = archive_path.parent / TRANSLATED_DIR_NAME
+    translated_dir.mkdir(parents=True, exist_ok=True)
+    destination = unique_destination_path(translated_dir / archive_path.name)
+    return Path(shutil.move(str(archive_path), str(destination)))
 
 
 def read_archive_flags(archive_path: Path) -> tuple[bool, bool, bool, str]:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -17,6 +18,7 @@ from comicrack_master import (
     ArchiveRecord,
     load_app_settings,
     load_source_state,
+    move_source_archive_to_translated_folder,
     repo_root,
     records_as_copy_list,
     save_app_settings,
@@ -69,9 +71,20 @@ def subprocess_environment() -> dict[str, str]:
     return env
 
 
+def resolve_command_executable(executable: str) -> str:
+    resolved = shutil.which(executable)
+    if resolved is None:
+        raise FileNotFoundError(f"Required command not found on PATH: {executable}")
+    return resolved
+
+
 def run_captured_command(command: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    if not command:
+        raise ValueError("Command cannot be empty.")
+
+    resolved_command = [resolve_command_executable(command[0]), *command[1:]]
     return subprocess.run(
-        command,
+        resolved_command,
         cwd=str(cwd) if cwd is not None else None,
         capture_output=True,
         text=True,
@@ -80,6 +93,21 @@ def run_captured_command(command: list[str], cwd: Path | None = None) -> subproc
         env=subprocess_environment(),
         check=False,
     )
+
+
+def file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def open_archive_with_default_app(path: Path | str) -> None:
+    startfile = getattr(os, "startfile", None)
+    if not callable(startfile):
+        raise RuntimeError("Opening comics from the UI is only supported on Windows.")
+    startfile(str(path))
 
 
 class Tooltip:
@@ -193,6 +221,7 @@ class ComicRackMasterUI(tk.Tk):
         self.configure_tree_headings()
         self.configure_tree_columns()
         self.tree.bind("<ButtonRelease-1>", self.on_tree_button_release)
+        self.tree.bind("<Double-1>", self.open_tree_comic)
         self.tree.bind("<space>", self.toggle_current_selection)
 
         y_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
@@ -203,7 +232,7 @@ class ComicRackMasterUI(tk.Tk):
         x_scroll.grid(row=1, column=0, sticky="ew")
         Tooltip(
             self.tree,
-            "Click a column heading to sort. Drag heading borders to resize columns; widths are saved. Click the Use column or press Space to toggle processing.",
+            "Double-click a comic to open it. Click a column heading to sort. Drag heading borders to resize columns; widths are saved. Click the Use column or press Space to toggle processing.",
         )
 
         log_frame = ttk.LabelFrame(self, text="Run Log", padding=6)
@@ -465,6 +494,37 @@ class ComicRackMasterUI(tk.Tk):
     def selected_records(self) -> list[ArchiveRecord]:
         return [record for record in self.records if record.selected]
 
+    def open_tree_comic(self, event: tk.Event) -> str:
+        row_id = self.tree.identify_row(event.y)
+        if row_id:
+            self.open_comic(row_id)
+        return "break"
+
+    def open_comic(self, relative_path: str) -> None:
+        source = self.require_source()
+        if source is None:
+            return
+
+        record = next((item for item in self.records if item.relative_path == relative_path), None)
+        if record is None:
+            return
+
+        archive_path = source / record.relative_path
+        if not archive_path.is_file():
+            messagebox.showerror("ComicRack Library Master", f"Comic archive does not exist:\n{archive_path}")
+            return
+
+        try:
+            open_archive_with_default_app(archive_path)
+        except OSError as exc:
+            messagebox.showerror("ComicRack Library Master", f"Could not open comic archive:\n{exc}")
+            return
+        except RuntimeError as exc:
+            messagebox.showerror("ComicRack Library Master", str(exc))
+            return
+
+        self.status_var.set(f"Opened {record.relative_path}")
+
     def convert_zip_to_cbz(self) -> None:
         source = self.require_source()
         if source is None:
@@ -532,19 +592,30 @@ class ComicRackMasterUI(tk.Tk):
             return
 
         def action() -> list[str]:
-            messages = []
-            for record in targets:
+            total = len(targets)
+            for index, record in enumerate(targets, start=1):
                 archive_path = source / record.relative_path
                 output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
+                output_before = file_signature(output_path)
+                self.append_log_from_worker(f"Translate [{index}/{total}]: {record.relative_path}")
                 result = run_captured_command(
                     ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)],
                     cwd=cli_dir,
                 )
                 output = (result.stdout + result.stderr).strip()
-                messages.append(output or f"Processed {record.relative_path}")
+                self.append_log_from_worker(output or f"Processed {record.relative_path}")
                 if result.returncode != 0:
+                    self.append_log_from_worker(f"TranslateEXGallery failed for {record.relative_path}")
                     raise RuntimeError(f"TranslateEXGallery failed for {record.relative_path}:\n{output}")
-            return messages
+                output_after = file_signature(output_path)
+                if output_after is not None and output_after != output_before and archive_path.is_file():
+                    moved_path = move_source_archive_to_translated_folder(archive_path)
+                    try:
+                        moved_display = moved_path.relative_to(source).as_posix()
+                    except ValueError:
+                        moved_display = str(moved_path)
+                    self.append_log_from_worker(f"Moved original to {moved_display}")
+            return []
 
         self.run_in_worker("Translating selected archives...", action, done_message="Translate selected finished", rescan_after=True)
 
@@ -640,6 +711,7 @@ class ComicRackMasterUI(tk.Tk):
             "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
+            "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
             "The path fields are saved in master_ui_settings.json beside this UI script.",
         )

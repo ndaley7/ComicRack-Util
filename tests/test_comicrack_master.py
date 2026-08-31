@@ -8,6 +8,7 @@ from comicrack_master import (
     load_app_settings,
     records_as_copy_list,
     load_source_state,
+    move_source_archive_to_translated_folder,
     save_app_settings,
     save_source_state,
     scan_source_directory,
@@ -68,6 +69,38 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source)
 
             self.assertEqual([record.relative_path for record in records], ["Root.cbz"])
+
+    def test_move_source_archive_to_translated_folder_removes_original_from_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            original = source / "Original.cbz"
+            translated = source / "Original-translatedENG.cbz"
+            write_archive(original, {"info.txt": "Language: Chinese", "page.jpg": "image"})
+            write_archive(translated, {"info.txt": "Language: English", "page.jpg": "translated image"})
+
+            moved = move_source_archive_to_translated_folder(original)
+            records = scan_source_directory(source)
+
+            self.assertEqual(moved, source / "Translated" / "Original.cbz")
+            self.assertTrue(moved.is_file())
+            self.assertFalse(original.exists())
+            self.assertEqual([record.relative_path for record in records], ["Original-translatedENG.cbz"])
+            self.assertTrue(records[0].english)
+
+    def test_move_source_archive_to_translated_folder_keeps_existing_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            translated_dir = source / "Translated"
+            translated_dir.mkdir()
+            write_archive(translated_dir / "Original.cbz", {"page.jpg": "previous"})
+            original = source / "Original.cbz"
+            write_archive(original, {"page.jpg": "current"})
+
+            moved = move_source_archive_to_translated_folder(original)
+
+            self.assertEqual(moved, translated_dir / "Original (1).cbz")
+            self.assertTrue((translated_dir / "Original.cbz").is_file())
+            self.assertTrue(moved.is_file())
 
     def test_records_as_copy_list_returns_current_record_paths(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
