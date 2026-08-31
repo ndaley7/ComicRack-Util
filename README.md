@@ -207,15 +207,19 @@ cd TranslateEXGallery
 npm install
 ```
 
-Super-Saver mode is optional and needs Python PaddleOCR dependencies. For a
-typical CPU-only Windows setup:
+Super-Saver mode is optional and needs Python PaddleOCR dependencies.
+PaddlePaddle currently publishes Windows wheels for Python 3.9 through 3.13,
+so use a supported Python for this feature. For a typical CPU-only Windows
+setup:
 
 ```powershell
-python -m pip install -r .\requirements-super-saver.txt
+py -3.13 -m pip install -r .\requirements-super-saver.txt
 ```
 
-From the repository root, `python -m pip install -r .\requirements.txt`
+From the repository root, `py -3.13 -m pip install -r .\requirements.txt`
 installs the Python dependencies for every tool in the suite.
+If the master UI is running under a different Python, set `PADDLEOCR_PYTHON`
+to the supported Python executable before launching it.
 
 Set your Torii API key:
 

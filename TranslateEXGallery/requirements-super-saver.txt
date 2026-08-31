@@ -1,4 +1,5 @@
 # Optional dependencies for TranslateEXGallery Super-Saver mode.
+# PaddlePaddle wheels currently support Python 3.9 through 3.13 on Windows.
 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
-paddlepaddle==3.2.0
-paddleocr[all]>=3.0.0
+paddlepaddle==3.3.1
+paddleocr>=3.7.0,<3.8.0

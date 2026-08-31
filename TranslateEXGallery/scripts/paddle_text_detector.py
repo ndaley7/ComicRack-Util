@@ -13,10 +13,9 @@ from typing import Any
 
 INSTALL_HELP = (
     "PaddleOCR is required for Super-Saver mode. Install PaddlePaddle for your "
-    "platform, then install PaddleOCR. For CPU on many Windows setups: "
-    "python -m pip install paddlepaddle==3.2.0 -i "
-    "https://www.paddlepaddle.org.cn/packages/stable/cpu/ && "
-    "python -m pip install \"paddleocr[all]\""
+    "platform, then install PaddleOCR. PaddlePaddle currently publishes Windows "
+    "wheels for Python 3.9 through 3.13. For CPU on many Windows setups: "
+    "py -3.13 -m pip install -r TranslateEXGallery\\requirements-super-saver.txt"
 )
 
 
@@ -32,7 +31,8 @@ def import_text_detection() -> Any:
     try:
         from paddleocr import TextDetection
     except Exception as exc:  # pragma: no cover - exercised only when dependency is missing
-        raise RuntimeError(f"{INSTALL_HELP}\nImport error: {exc}") from exc
+        python_details = f"Python executable: {sys.executable}\nPython version: {sys.version.split()[0]}"
+        raise RuntimeError(f"{INSTALL_HELP}\n{python_details}\nImport error: {exc}") from exc
     return TextDetection
 
 

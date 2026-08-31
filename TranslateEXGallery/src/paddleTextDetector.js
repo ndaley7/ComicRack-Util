@@ -19,7 +19,7 @@ function detectionImagePath(workDir, filename, imageBuffer, sourceHash) {
 
 export class PaddleOcrTextDetector {
   constructor({
-    pythonExecutable = process.env.PYTHON || 'python',
+    pythonExecutable = process.env.PADDLEOCR_PYTHON || process.env.PYTHON || 'python',
     detectorScript = DEFAULT_DETECTOR_SCRIPT,
     minScore = 0.6,
     timeoutMs = 180000
