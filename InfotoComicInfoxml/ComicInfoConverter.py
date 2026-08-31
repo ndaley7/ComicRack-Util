@@ -13,10 +13,13 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, ParseError, SubElement, parse, tostring
 from xml.dom import minidom
 from dataclasses import dataclass, field
 from typing import List, Dict
+
+
+TAG_BANK_FILENAME = 'UniversalTagBank.xml'
 
 
 _CONTENT_RATING_TERMS_ENCODED = (
@@ -204,6 +207,93 @@ def parse_info_txt(filepath: str) -> GalleryMetadata:
     """Parse the info.txt file into GalleryMetadata."""
     with open(filepath, 'r', encoding='utf-8-sig') as f:
         return parse_info_content(f.read())
+
+
+def normalize_tag_bank_category(category: str) -> str:
+    return re.sub(r'\s+', ' ', category.strip().lower())
+
+
+def normalize_tag_bank_tag(tag: str) -> str:
+    return re.sub(r'\s+', ' ', tag.strip())
+
+
+def load_tag_bank(tag_bank_path: Path) -> Dict[str, List[str]]:
+    """Load an existing universal tag bank XML file."""
+    tag_bank: Dict[str, List[str]] = {}
+    if not tag_bank_path.exists():
+        return tag_bank
+
+    try:
+        root = parse(tag_bank_path).getroot()
+    except ParseError as exc:
+        raise ValueError(f'Could not parse tag bank XML: {tag_bank_path}: {exc}') from exc
+
+    for category_element in root.findall('Category'):
+        category = normalize_tag_bank_category(category_element.get('name', ''))
+        if not category:
+            continue
+
+        category_tags = tag_bank.setdefault(category, [])
+        seen = {tag.casefold() for tag in category_tags}
+        for tag_element in category_element.findall('Tag'):
+            tag = normalize_tag_bank_tag(tag_element.text or '')
+            key = tag.casefold()
+            if tag and key not in seen:
+                category_tags.append(tag)
+                seen.add(key)
+
+    return tag_bank
+
+
+def merge_tags_into_bank(tag_bank: Dict[str, List[str]], tags: Dict[str, List[str]]) -> int:
+    """Add unseen tags to an in-memory tag bank."""
+    added = 0
+    for category, tag_list in tags.items():
+        clean_category = normalize_tag_bank_category(category)
+        if not clean_category:
+            continue
+
+        bank_tags = tag_bank.setdefault(clean_category, [])
+        seen = {tag.casefold() for tag in bank_tags}
+        for tag in tag_list:
+            clean_tag = normalize_tag_bank_tag(tag)
+            key = clean_tag.casefold()
+            if clean_tag and key not in seen:
+                bank_tags.append(clean_tag)
+                seen.add(key)
+                added += 1
+    return added
+
+
+def build_tag_bank_xml(tag_bank: Dict[str, List[str]]) -> str:
+    """Build a sorted universal tag bank XML document."""
+    root = Element('UniversalTagBank')
+
+    for category in sorted(tag_bank.keys(), key=lambda value: (value.casefold(), value)):
+        tags = tag_bank[category]
+        if not tags:
+            continue
+        category_element = SubElement(root, 'Category', {'name': category})
+        unique_tags = unique_preserve_order(tags)
+        for tag in sorted(unique_tags, key=lambda value: (value.casefold(), value)):
+            SubElement(category_element, 'Tag').text = tag
+
+    rough_string = tostring(root, encoding='utf-8')
+    pretty = minidom.parseString(rough_string).toprettyxml(indent='  ', encoding='utf-8')
+    return pretty.decode('utf-8')
+
+
+def update_universal_tag_bank(source_dir: Path, tags: Dict[str, List[str]]) -> int:
+    """Add new tags to the universal tag bank in the source directory."""
+    if not any(tags.values()):
+        return 0
+
+    tag_bank_path = source_dir / TAG_BANK_FILENAME
+    tag_bank = load_tag_bank(tag_bank_path)
+    added = merge_tags_into_bank(tag_bank, tags)
+    if added:
+        tag_bank_path.write_text(build_tag_bank_xml(tag_bank), encoding='utf-8', newline='\n')
+    return added
 
 
 def build_prefixed_tags(tags: Dict[str, List[str]]) -> List[str]:
@@ -542,6 +632,7 @@ def convert_file(info_path: Path, output_path: Path = None, overwrite: bool = Fa
     meta = parse_info_txt(str(info_path))
     xml = build_comicinfo_xml(meta)
     destination.write_text(xml, encoding='utf-8', newline='\n')
+    update_universal_tag_bank(info_path.parent, meta.tags)
     return destination
 
 
@@ -579,7 +670,8 @@ def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
             return f'Skipped {cbz_path}: root ComicInfo.xml already exists. Use --force to replace it.'
 
         content = source.read(info_entry).decode('utf-8-sig')
-        xml = build_comicinfo_xml(parse_info_content(content))
+        meta = parse_info_content(content)
+        xml = build_comicinfo_xml(meta)
 
         temp_handle, temp_name = tempfile.mkstemp(
             dir=str(cbz_path.parent),
@@ -599,6 +691,7 @@ def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
                 destination.writestr('ComicInfo.xml', xml)
 
         shutil.move(str(temp_path), str(cbz_path))
+        update_universal_tag_bank(cbz_path.parent, meta.tags)
     except Exception:
         if temp_path.exists():
             temp_path.unlink()
