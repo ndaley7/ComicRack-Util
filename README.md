@@ -77,6 +77,9 @@ original disappears from the list and the new translated archive is added.
 By default, Translate skips archives whose `info.txt` contains
 `Category: Artist CG` or `Category: Game CG`; check **Artist/Game CG** beside
 the Translate button to include those galleries.
+**Super-Saver mode** is unchecked by default. When checked, Translate uses
+PaddleOCR text detection before each uncached page upload and skips pages where
+no text boxes are found.
 While translating, the bottom progress bar switches to the current archive's
 image count, such as `(1/200)`, and advances as page translations complete or
 cached pages are reused.
@@ -204,6 +207,16 @@ cd TranslateEXGallery
 npm install
 ```
 
+Super-Saver mode is optional and needs Python PaddleOCR dependencies. For a
+typical CPU-only Windows setup:
+
+```powershell
+python -m pip install -r .\requirements-super-saver.txt
+```
+
+From the repository root, `python -m pip install -r .\requirements.txt`
+installs the Python dependencies for every tool in the suite.
+
 Set your Torii API key:
 
 ```powershell
@@ -241,6 +254,12 @@ npm start -- --zip "..\SAMPLES\[Miwerjooggetser] Yelan Nama Onaho-ka (Genshin Im
 
 For CBZ files, the default output keeps the `.cbz` extension, for example `sample.cbz` becomes `sample-translatedENG.cbz`.
 
+Enable PaddleOCR preflight text detection from the CLI with:
+
+```powershell
+npm start -- --zip "C:\path\to\comic.cbz" --super-saver
+```
+
 ## Behavior
 
 For each supported image in the archive, the tool:
@@ -249,6 +268,7 @@ For each supported image in the archive, the tool:
 - replaces the archive entry with Torii's translated image result
 - processes images sequentially to respect Torii's rate limit
 - reuses cached page translations from a previous failed run when available
+- in Super-Saver mode, skips Torii uploads for uncached pages where PaddleOCR detects no text boxes
 - retries transient failures such as `429`, upstream `5xx` errors, and network timeouts
 - logs remaining Torii credits after each image when Torii returns the `credits` response header
 

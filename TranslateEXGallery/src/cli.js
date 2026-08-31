@@ -18,6 +18,8 @@ function parseArgs(argv) {
     } else if (arg === '--out' || arg === '-o') {
       args.outputZipPath = argv[index + 1];
       index += 1;
+    } else if (arg === '--super-saver') {
+      args.superSaverMode = true;
     } else if (!args.inputZipPath) {
       args.inputZipPath = arg;
     }
@@ -46,6 +48,14 @@ function printProgress(event) {
     }
   } else if (event.type === 'image-start') {
     console.log(`[${event.index}/${event.total}] Translating ${event.filename}`);
+  } else if (event.type === 'image-text-start') {
+    console.log(`[${event.index}/${event.total}] Checking text ${event.filename}`);
+  } else if (event.type === 'image-text-detected') {
+    const scoreText = event.maxScore !== undefined ? ` max score: ${event.maxScore.toFixed(3)}` : '';
+    console.log(`[${event.index}/${event.total}] Text detected ${event.filename}. Boxes: ${event.boxCount}.${scoreText}`);
+  } else if (event.type === 'image-no-text') {
+    const cachedText = event.cached ? ' cached' : '';
+    console.log(`[${event.index}/${event.total}] No text found ${event.filename}.${cachedText}`);
   } else if (event.type === 'image-cached') {
     console.log(`[${event.index}/${event.total}] Reusing cached translation ${event.filename}`);
   } else if (event.type === 'image-complete') {
@@ -65,6 +75,9 @@ function printProgress(event) {
     }
     if (event.estimatedCostUsd !== undefined) {
       console.log(`Estimated cost: ${formatUsd(event.estimatedCostUsd)} (${COST_RATIO_TEXT})`);
+    }
+    if (event.skippedNoTextImageCount > 0) {
+      console.log(`Super-Saver skipped ${event.skippedNoTextImageCount} image(s) with no detected text.`);
     }
   }
 }
@@ -94,6 +107,7 @@ async function main() {
   const result = await translateGalleryZip({
     inputZipPath: path.resolve(args.inputZipPath),
     outputZipPath: path.resolve(args.outputZipPath),
+    superSaverMode: args.superSaverMode === true,
     createToriiClient: () => new ToriiClient(),
     onProgress: printProgress
   });
@@ -103,7 +117,11 @@ async function main() {
     return;
   }
 
-  console.log(`Translated ${result.imageCount} image(s) from ${result.sourceLanguage || 'the detected language'} to English.`);
+  if (result.skippedNoTextImageCount > 0) {
+    console.log(`Translated ${result.translatedImageCount} of ${result.imageCount} image(s) from ${result.sourceLanguage || 'the detected language'} to English.`);
+  } else {
+    console.log(`Translated ${result.imageCount} image(s) from ${result.sourceLanguage || 'the detected language'} to English.`);
+  }
   if (result.creditsBefore !== undefined || result.creditsAfter !== undefined || result.creditsUsed !== undefined) {
     console.log(`Credit summary: before=${result.creditsBefore ?? 'unknown'}, after=${result.creditsAfter ?? 'unknown'}, used=${result.creditsUsed ?? 'unknown'}`);
   }

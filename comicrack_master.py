@@ -26,6 +26,7 @@ class AppSettings:
     fansadox_source: str = ""
     column_widths: dict[str, int] = field(default_factory=dict)
     translate_cg_galleries: bool = False
+    super_saver_mode: bool = False
 
 
 @dataclass
@@ -82,6 +83,7 @@ def load_app_settings(base_dir: Path | None = None) -> AppSettings:
         fansadox_source=str(data.get("fansadox_source", "")),
         column_widths=column_widths,
         translate_cg_galleries=bool(data.get("translate_cg_galleries", False)),
+        super_saver_mode=bool(data.get("super_saver_mode", False)),
     )
 
 

@@ -205,3 +205,91 @@ test('translates cbz archives with cbz output extension', async () => {
   assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
   assert.equal(outputZip.readFile('Gallery/MCN_1.webp').toString('utf8'), 'translated-image-1');
 });
+
+test('super-saver skips images where PaddleOCR detects no text', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+  const outputZipPath = path.join(tempDir, 'sample.translated.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/text-page.webp', Buffer.from('text-page-image'));
+  inputZip.addFile('Gallery/art-page.webp', Buffer.from('art-page-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Chinese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const detectorCalls = [];
+  const toriiCalls = [];
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    superSaverMode: true,
+    textDetector: {
+      async hasText({ filename, imageBuffer }) {
+        detectorCalls.push({ filename, imageBuffer: imageBuffer.toString('utf8') });
+        return {
+          hasText: filename.endsWith('text-page.webp'),
+          boxCount: filename.endsWith('text-page.webp') ? 2 : 0,
+          maxScore: filename.endsWith('text-page.webp') ? 0.92 : undefined
+        };
+      }
+    },
+    toriiClient: {
+      async translateImage({ filename }) {
+        toriiCalls.push(filename);
+        return Buffer.from('translated-text-page');
+      }
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.imageCount, 2);
+  assert.equal(result.translatedImageCount, 1);
+  assert.equal(result.skippedNoTextImageCount, 1);
+  assert.deepEqual(detectorCalls, [
+    { filename: 'Gallery/art-page.webp', imageBuffer: 'art-page-image' },
+    { filename: 'Gallery/text-page.webp', imageBuffer: 'text-page-image' }
+  ]);
+  assert.deepEqual(toriiCalls, ['Gallery/text-page.webp']);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'image-no-text').map((event) => event.filename),
+    ['Gallery/art-page.webp']
+  );
+
+  const outputZip = new AdmZip(outputZipPath);
+  assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
+  assert.equal(outputZip.readFile('Gallery/text-page.webp').toString('utf8'), 'translated-text-page');
+  assert.equal(outputZip.readFile('Gallery/art-page.webp').toString('utf8'), 'art-page-image');
+});
+
+test('super-saver does not create Torii client when no images contain text', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+  const outputZipPath = path.join(tempDir, 'sample.translated.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/art-page.webp', Buffer.from('art-page-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Korean\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    superSaverMode: true,
+    textDetector: {
+      async hasText() {
+        return { hasText: false, boxCount: 0 };
+      }
+    },
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created when no text is detected.');
+    }
+  });
+
+  assert.equal(result.translatedImageCount, 0);
+  assert.equal(result.skippedNoTextImageCount, 1);
+
+  const outputZip = new AdmZip(outputZipPath);
+  assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
+  assert.equal(outputZip.readFile('Gallery/art-page.webp').toString('utf8'), 'art-page-image');
+});

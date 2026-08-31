@@ -1,0 +1,4 @@
+# Optional dependencies for TranslateEXGallery Super-Saver mode.
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
+paddlepaddle==3.2.0
+paddleocr[all]>=3.0.0

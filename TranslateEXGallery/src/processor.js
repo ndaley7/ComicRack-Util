@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { decodeInfoText, updateLanguageToEnglish } from './infoTxt.js';
+import { PaddleOcrTextDetector } from './paddleTextDetector.js';
 import { buildTranslatedZip, defaultOutputPath, findInfoEntry, listImageEntries, readZip } from './zipUtils.js';
 
 export const CREDIT_PRICE_USD = 13 / 6000;
@@ -81,7 +82,7 @@ function readManifest(workDir, signature) {
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestPath(workDir), 'utf8'));
     if (manifest.version === 1 && sameSourceSignature(manifest.source, signature) && typeof manifest.images === 'object') {
-      return manifest;
+      return normalizeManifest(manifest);
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
@@ -105,7 +106,8 @@ function prepareManifest(workDir, signature) {
   return {
     version: 1,
     source: signature,
-    images: {}
+    images: {},
+    textDetection: {}
   };
 }
 
@@ -138,12 +140,52 @@ function writeCachedImage(workDir, manifest, entryName, sourceHash, imageBuffer)
   writeManifest(workDir, manifest);
 }
 
+function normalizeManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object') {
+    return manifest;
+  }
+  if (!manifest.images || typeof manifest.images !== 'object') {
+    manifest.images = {};
+  }
+  if (!manifest.textDetection || typeof manifest.textDetection !== 'object') {
+    manifest.textDetection = {};
+  }
+  return manifest;
+}
+
+function cachedTextDetection(manifest, entryName, sourceHash) {
+  const cacheEntry = manifest.textDetection?.[entryName];
+  if (!cacheEntry || cacheEntry.sourceHash !== sourceHash || typeof cacheEntry.hasText !== 'boolean') {
+    return undefined;
+  }
+
+  return {
+    hasText: cacheEntry.hasText,
+    boxCount: Number.isInteger(cacheEntry.boxCount) ? cacheEntry.boxCount : 0,
+    maxScore: typeof cacheEntry.maxScore === 'number' ? cacheEntry.maxScore : undefined,
+    cached: true
+  };
+}
+
+function writeCachedTextDetection(workDir, manifest, entryName, sourceHash, detection) {
+  manifest.textDetection[entryName] = {
+    sourceHash,
+    hasText: Boolean(detection.hasText),
+    boxCount: Number.isInteger(detection.boxCount) ? detection.boxCount : 0,
+    maxScore: typeof detection.maxScore === 'number' ? detection.maxScore : undefined
+  };
+  writeManifest(workDir, manifest);
+}
+
 export async function translateGalleryZip({
   inputZipPath,
   outputZipPath = defaultOutputPath(inputZipPath),
   workDir,
   toriiClient,
   createToriiClient,
+  superSaverMode = false,
+  textDetector,
+  createTextDetector,
   onProgress = () => {}
 }) {
   if (!inputZipPath) {
@@ -198,6 +240,8 @@ export async function translateGalleryZip({
   const signature = sourceSignature(resolvedInputPath);
   const manifest = prepareManifest(resolvedWorkDir, signature);
   let pendingImageCount = 0;
+  let translatedImageCount = 0;
+  let skippedNoTextImageCount = 0;
 
   for (const entry of imageEntries) {
     const sourceBuffer = entry.getData();
@@ -211,14 +255,14 @@ export async function translateGalleryZip({
   }
 
   let activeToriiClient;
-  if (pendingImageCount > 0) {
+  if (pendingImageCount > 0 && !superSaverMode) {
     activeToriiClient = toriiClient ?? createToriiClient?.();
     if (!activeToriiClient) {
       throw new Error('A Torii client is required to translate images.');
     }
   }
 
-  const creditsBefore = await getCreditsIfAvailable(activeToriiClient, onProgress, 'before');
+  let creditsBefore = await getCreditsIfAvailable(activeToriiClient, onProgress, 'before');
 
   onProgress({
     type: 'start',
@@ -228,35 +272,100 @@ export async function translateGalleryZip({
     creditsBefore
   });
 
-  for (let index = 0; index < imageEntries.length; index += 1) {
-    const entry = imageEntries[index];
-    const sourceHash = sha256(entry.getData());
-    if (replacements.has(entry.entryName)) {
-      onProgress({ type: 'image-cached', index: index + 1, total: imageEntries.length, filename: entry.entryName });
-      continue;
+  let activeTextDetector = textDetector;
+  let createdTextDetector;
+  try {
+    if (pendingImageCount > 0 && superSaverMode && !activeTextDetector) {
+      createdTextDetector = createTextDetector?.() ?? new PaddleOcrTextDetector();
+      activeTextDetector = createdTextDetector;
+    }
+    if (pendingImageCount > 0 && superSaverMode && !activeTextDetector) {
+      throw new Error('A PaddleOCR text detector is required for Super-Saver mode.');
     }
 
-    onProgress({ type: 'image-start', index: index + 1, total: imageEntries.length, filename: entry.entryName });
+    for (let index = 0; index < imageEntries.length; index += 1) {
+      const entry = imageEntries[index];
+      const imageBuffer = entry.getData();
+      const sourceHash = sha256(imageBuffer);
+      if (replacements.has(entry.entryName)) {
+        translatedImageCount += 1;
+        onProgress({ type: 'image-cached', index: index + 1, total: imageEntries.length, filename: entry.entryName });
+        continue;
+      }
 
-    const translateResult = normalizeTranslateResult(await activeToriiClient.translateImage({
-      filename: entry.entryName,
-      imageBuffer: entry.getData(),
-      sourceLanguage
-    }));
+      if (superSaverMode) {
+        let detection = cachedTextDetection(manifest, entry.entryName, sourceHash);
+        if (!detection) {
+          onProgress({ type: 'image-text-start', index: index + 1, total: imageEntries.length, filename: entry.entryName });
+          detection = await activeTextDetector.hasText({
+            filename: entry.entryName,
+            imageBuffer,
+            workDir: resolvedWorkDir,
+            sourceHash
+          });
+          writeCachedTextDetection(resolvedWorkDir, manifest, entry.entryName, sourceHash, detection);
+        }
 
-    if (!Buffer.isBuffer(translateResult.imageBuffer)) {
-      throw new Error(`Torii did not return translated image bytes for ${entry.entryName}.`);
+        if (!detection.hasText) {
+          skippedNoTextImageCount += 1;
+          onProgress({
+            type: 'image-no-text',
+            index: index + 1,
+            total: imageEntries.length,
+            filename: entry.entryName,
+            boxCount: detection.boxCount,
+            maxScore: detection.maxScore,
+            cached: detection.cached === true
+          });
+          continue;
+        }
+
+        onProgress({
+          type: 'image-text-detected',
+          index: index + 1,
+          total: imageEntries.length,
+          filename: entry.entryName,
+          boxCount: detection.boxCount,
+          maxScore: detection.maxScore,
+          cached: detection.cached === true
+        });
+      }
+
+      if (!activeToriiClient) {
+        activeToriiClient = toriiClient ?? createToriiClient?.();
+        if (!activeToriiClient) {
+          throw new Error('A Torii client is required to translate images.');
+        }
+        if (creditsBefore === undefined) {
+          creditsBefore = await getCreditsIfAvailable(activeToriiClient, onProgress, 'before');
+        }
+      }
+
+      onProgress({ type: 'image-start', index: index + 1, total: imageEntries.length, filename: entry.entryName });
+
+      const translateResult = normalizeTranslateResult(await activeToriiClient.translateImage({
+        filename: entry.entryName,
+        imageBuffer,
+        sourceLanguage
+      }));
+
+      if (!Buffer.isBuffer(translateResult.imageBuffer)) {
+        throw new Error(`Torii did not return translated image bytes for ${entry.entryName}.`);
+      }
+
+      translatedImageCount += 1;
+      replacements.set(entry.entryName, translateResult.imageBuffer);
+      writeCachedImage(resolvedWorkDir, manifest, entry.entryName, sourceHash, translateResult.imageBuffer);
+      onProgress({
+        type: 'image-complete',
+        index: index + 1,
+        total: imageEntries.length,
+        filename: entry.entryName,
+        creditsRemaining: translateResult.creditsRemaining
+      });
     }
-
-    replacements.set(entry.entryName, translateResult.imageBuffer);
-    writeCachedImage(resolvedWorkDir, manifest, entry.entryName, sourceHash, translateResult.imageBuffer);
-    onProgress({
-      type: 'image-complete',
-      index: index + 1,
-      total: imageEntries.length,
-      filename: entry.entryName,
-      creditsRemaining: translateResult.creditsRemaining
-    });
+  } finally {
+    await createdTextDetector?.close?.();
   }
 
   const creditsAfter = await getCreditsIfAvailable(activeToriiClient, onProgress, 'after');
@@ -268,13 +377,24 @@ export async function translateGalleryZip({
   outputZip.writeZip(resolvedOutputPath);
   fs.rmSync(resolvedWorkDir, { recursive: true, force: true });
 
-  onProgress({ type: 'complete', outputZipPath: resolvedOutputPath, creditsBefore, creditsAfter, creditsUsed, estimatedCostUsd });
+  onProgress({
+    type: 'complete',
+    outputZipPath: resolvedOutputPath,
+    creditsBefore,
+    creditsAfter,
+    creditsUsed,
+    estimatedCostUsd,
+    translatedImageCount,
+    skippedNoTextImageCount
+  });
 
   return {
     skipped: false,
     outputZipPath: resolvedOutputPath,
     sourceLanguage,
     imageCount: imageEntries.length,
+    translatedImageCount,
+    skippedNoTextImageCount,
     creditsBefore,
     creditsAfter,
     creditsUsed,

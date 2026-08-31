@@ -70,6 +70,7 @@ COLUMN_MIN_WIDTHS = {
 def subprocess_environment() -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8:backslashreplace"
+    env.setdefault("PYTHON", sys.executable)
     return env
 
 
@@ -146,7 +147,7 @@ def open_archive_with_default_app(path: Path | str) -> None:
 
 
 TRANSLATE_IMAGE_PROGRESS_RE = re.compile(
-    r"^\[(?P<index>\d+)/(?P<total>\d+)\]\s+(?P<action>Translating|Done|Reusing cached translation)\b"
+    r"^\[(?P<index>\d+)/(?P<total>\d+)\]\s+(?P<action>Checking text|No text found|Text detected|Translating|Done|Reusing cached translation)\b"
 )
 
 
@@ -157,7 +158,7 @@ def translate_image_progress_from_line(line: str) -> tuple[int, int, bool] | Non
 
     index = int(match.group("index"))
     total = int(match.group("total"))
-    completed = match.group("action") != "Translating"
+    completed = match.group("action") in {"Done", "Reusing cached translation", "No text found"}
     return index, total, completed
 
 
@@ -206,6 +207,7 @@ class ComicRackMasterUI(tk.Tk):
         self.remote_var = tk.StringVar(value=self.settings.remote_sync_target)
         self.fansadox_var = tk.StringVar(value=self.settings.fansadox_source)
         self.translate_cg_var = tk.BooleanVar(value=self.settings.translate_cg_galleries)
+        self.super_saver_var = tk.BooleanVar(value=self.settings.super_saver_mode)
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
         self.progress_text_var = tk.StringVar(value="")
@@ -250,7 +252,7 @@ class ComicRackMasterUI(tk.Tk):
 
         toolbar = ttk.Frame(self, padding=(10, 0, 10, 6))
         toolbar.grid(row=1, column=0, sticky="ew")
-        toolbar.columnconfigure(10, weight=1)
+        toolbar.columnconfigure(11, weight=1)
 
         self._add_button(toolbar, "Rescan", self.rescan, 0, "Force-refresh archive status from the ComicRack Source folder.")
         self._add_button(toolbar, "Select All", self.select_all, 1, "Select every listed archive.")
@@ -267,12 +269,21 @@ class ComicRackMasterUI(tk.Tk):
         translate_cg_check.grid(row=0, column=6, padx=(0, 6), pady=2)
         Tooltip(translate_cg_check, "Allow Translate to process archives whose info.txt category is Artist CG or Game CG.")
         self.action_buttons.append(translate_cg_check)
-        self._add_button(toolbar, "Sync Selected", self.sync_selected, 7, "Copy selected archives to the Remote Sync Target folder.")
-        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 8, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
-        self._add_button(toolbar, "Help", self.show_help, 9, "Show a quick guide for this master UI.")
+        super_saver_check = ttk.Checkbutton(
+            toolbar,
+            text="Super-Saver mode",
+            variable=self.super_saver_var,
+            command=lambda: self.save_current_settings(save_archive_state=False),
+        )
+        super_saver_check.grid(row=0, column=7, padx=(0, 6), pady=2)
+        Tooltip(super_saver_check, "Use PaddleOCR to skip translating pages where no text boxes are detected.")
+        self.action_buttons.append(super_saver_check)
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 8, "Copy selected archives to the Remote Sync Target folder.")
+        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 9, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
+        self._add_button(toolbar, "Help", self.show_help, 10, "Show a quick guide for this master UI.")
 
         self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
-        self.selected_label.grid(row=0, column=10, sticky="e", padx=(8, 0))
+        self.selected_label.grid(row=0, column=11, sticky="e", padx=(8, 0))
 
         list_frame = ttk.Frame(self, padding=(10, 0, 10, 4))
         list_frame.grid(row=2, column=0, sticky="nsew")
@@ -390,6 +401,7 @@ class ComicRackMasterUI(tk.Tk):
             fansadox_source=self.fansadox_var.get().strip(),
             column_widths=self.current_column_widths(),
             translate_cg_galleries=self.translate_cg_var.get(),
+            super_saver_mode=self.super_saver_var.get(),
         )
 
     def save_current_settings(self, save_archive_state: bool = True) -> None:
@@ -671,6 +683,7 @@ class ComicRackMasterUI(tk.Tk):
             messagebox.showinfo("ComicRack Library Master", "Select at least one non-English archive.")
             return
         include_cg_galleries = self.translate_cg_var.get()
+        super_saver_mode = self.super_saver_var.get()
 
         def action() -> list[str]:
             total = len(targets)
@@ -693,11 +706,10 @@ class ComicRackMasterUI(tk.Tk):
                     self.set_progress_from_worker(progress_value, image_total, f"({image_index}/{image_total})")
 
                 self.set_progress_from_worker(0, 1, "")
-                result = run_streaming_command(
-                    ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)],
-                    cwd=cli_dir,
-                    on_line=on_translate_line,
-                )
+                command = ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)]
+                if super_saver_mode:
+                    command.append("--super-saver")
+                result = run_streaming_command(command, cwd=cli_dir, on_line=on_translate_line)
                 output = (result.stdout + result.stderr).strip()
                 if not output:
                     self.append_log_from_worker(f"Processed {record.relative_path}")
@@ -809,6 +821,7 @@ class ComicRackMasterUI(tk.Tk):
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
             "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
+            "Super-Saver mode is off by default. When enabled, Translate uses PaddleOCR text detection to skip pages where no text boxes are found.\n\n"
             "During translation, the bottom progress bar shows the current image count for the active archive.\n\n"
             "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "

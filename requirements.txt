@@ -1,0 +1,4 @@
+# Python dependencies for the ComicRack-Util tool suite.
+# The core Python utilities use only the standard library; Super-Saver mode
+# uses PaddleOCR/PaddlePaddle through TranslateEXGallery.
+-r TranslateEXGallery/requirements-super-saver.txt
