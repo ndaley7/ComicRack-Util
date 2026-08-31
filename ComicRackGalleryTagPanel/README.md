@@ -91,6 +91,10 @@ read. If you do not want the floating reader launcher, disable `Gallery Tags
 Startup Launcher` and `GalleryTagReaderLauncher` in ComicRack's Scripts
 preferences.
 
+The reader script also exposes ComicRack's sample-compatible
+`BookHasBeenOpened(book)` callback name, because some builds dispatch the
+book-open event by function name instead of by the `BookOpened` metadata hook.
+
 If the startup window does not appear, run `Show Gallery Tags Launcher` from a
 selected book's Automation menu. Script hook diagnostics are written to:
 

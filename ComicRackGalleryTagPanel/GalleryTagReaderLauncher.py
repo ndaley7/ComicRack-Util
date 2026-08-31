@@ -147,3 +147,8 @@ def GalleryTagReaderLauncher(book):
             pass
     except Exception:
         debug_exception("GalleryTagReaderLauncher failed")
+
+
+def BookHasBeenOpened(book):
+    debug_log("BookHasBeenOpened callback called")
+    GalleryTagReaderLauncher(book)
