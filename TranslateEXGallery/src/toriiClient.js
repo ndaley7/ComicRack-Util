@@ -21,11 +21,22 @@ function sleep(ms) {
 }
 
 function isRetryableStatus(status) {
-  return status === 429 || status === 503;
+  return status === 429 || [500, 502, 503, 504, 520, 522, 524].includes(status);
 }
 
 function isRetryableNetworkError(error) {
   return error instanceof TypeError || ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(error?.code);
+}
+
+function summarizeResponseText(text) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'empty response body';
+  }
+  if (/^<!doctype html/i.test(normalized) || /<html[\s>]/i.test(normalized)) {
+    return 'HTML error page returned by upstream service';
+  }
+  return normalized.length > 500 ? `${normalized.slice(0, 500)}...` : normalized;
 }
 
 function parseCredits(value) {
@@ -101,7 +112,7 @@ export class ToriiClient {
           };
         }
 
-        const responseText = await response.text();
+        const responseText = summarizeResponseText(await response.text());
         const message = `Torii returned HTTP ${response.status} for ${filename}: ${responseText}`;
         if (!isRetryableStatus(response.status) || attempt === this.maxAttempts) {
           throw new Error(message);

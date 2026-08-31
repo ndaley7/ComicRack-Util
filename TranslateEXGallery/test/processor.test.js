@@ -73,6 +73,68 @@ test('translates image entries, updates info.txt, and leaves source zip unchange
   assert.equal(originalZip.readAsText('Gallery/info.txt'), 'Title\r\nLanguage: Chinese \u00a0\r\n> language: chinese\r\n');
 });
 
+test('resumes a failed archive translation from cached page outputs', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.cbz');
+  const outputZipPath = path.join(tempDir, 'sample-translatedENG.cbz');
+  const workDir = `${outputZipPath}.work`;
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/page-1.webp', Buffer.from('original-image-1'));
+  inputZip.addFile('Gallery/page-2.webp', Buffer.from('original-image-2'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Korean\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const firstRunCalls = [];
+  await assert.rejects(
+    () => translateGalleryZip({
+      inputZipPath,
+      outputZipPath,
+      toriiClient: {
+        async translateImage({ filename }) {
+          firstRunCalls.push(filename);
+          if (filename.endsWith('page-2.webp')) {
+            throw new Error('temporary Torii failure');
+          }
+          return Buffer.from('translated-image-1');
+        }
+      }
+    }),
+    /temporary Torii failure/
+  );
+
+  assert.deepEqual(firstRunCalls, ['Gallery/page-1.webp', 'Gallery/page-2.webp']);
+  assert.equal(fs.existsSync(outputZipPath), false);
+  assert.equal(fs.existsSync(path.join(workDir, 'manifest.json')), true);
+
+  const secondRunCalls = [];
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    toriiClient: {
+      async translateImage({ filename }) {
+        secondRunCalls.push(filename);
+        return Buffer.from('translated-image-2');
+      }
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, false);
+  assert.deepEqual(secondRunCalls, ['Gallery/page-2.webp']);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'image-cached').map((event) => event.filename),
+    ['Gallery/page-1.webp']
+  );
+  assert.equal(fs.existsSync(workDir), false);
+
+  const outputZip = new AdmZip(outputZipPath);
+  assert.equal(outputZip.readAsText('Gallery/info.txt'), 'Language: English\r\n');
+  assert.equal(outputZip.readFile('Gallery/page-1.webp').toString('utf8'), 'translated-image-1');
+  assert.equal(outputZip.readFile('Gallery/page-2.webp').toString('utf8'), 'translated-image-2');
+});
+
 test('skips without Torii calls when ZIP filename contains the word English', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
   const inputZipPath = path.join(tempDir, 'sample English.zip');

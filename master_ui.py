@@ -16,6 +16,7 @@ from typing import Any, Callable
 from comicrack_master import (
     AppSettings,
     ArchiveRecord,
+    is_artist_or_game_cg_archive,
     load_app_settings,
     load_source_state,
     move_source_archive_to_translated_folder,
@@ -154,6 +155,7 @@ class ComicRackMasterUI(tk.Tk):
         self.source_var = tk.StringVar(value=self.settings.comicrack_source)
         self.remote_var = tk.StringVar(value=self.settings.remote_sync_target)
         self.fansadox_var = tk.StringVar(value=self.settings.fansadox_source)
+        self.translate_cg_var = tk.BooleanVar(value=self.settings.translate_cg_galleries)
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
         self.busy = False
@@ -205,9 +207,18 @@ class ComicRackMasterUI(tk.Tk):
         self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Rename selected ZIP archives to CBZ and flatten a redundant same-named top-level folder when present.")
         self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 4, "Add ComicInfo.xml to selected CBZ archives that contain root info.txt.")
         self._add_button(toolbar, "Translate", self.translate_selected, 5, "Run TranslateEXGallery for selected non-English archives.")
-        self._add_button(toolbar, "Sync Selected", self.sync_selected, 6, "Copy selected archives to the Remote Sync Target folder.")
-        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 7, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
-        self._add_button(toolbar, "Help", self.show_help, 8, "Show a quick guide for this master UI.")
+        translate_cg_check = ttk.Checkbutton(
+            toolbar,
+            text="Artist/Game CG",
+            variable=self.translate_cg_var,
+            command=lambda: self.save_current_settings(save_archive_state=False),
+        )
+        translate_cg_check.grid(row=0, column=6, padx=(0, 6), pady=2)
+        Tooltip(translate_cg_check, "Allow Translate to process archives whose info.txt category is Artist CG or Game CG.")
+        self.action_buttons.append(translate_cg_check)
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 7, "Copy selected archives to the Remote Sync Target folder.")
+        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 8, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
+        self._add_button(toolbar, "Help", self.show_help, 9, "Show a quick guide for this master UI.")
 
         self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
         self.selected_label.grid(row=0, column=10, sticky="e", padx=(8, 0))
@@ -322,6 +333,7 @@ class ComicRackMasterUI(tk.Tk):
             remote_sync_target=self.remote_var.get().strip(),
             fansadox_source=self.fansadox_var.get().strip(),
             column_widths=self.current_column_widths(),
+            translate_cg_galleries=self.translate_cg_var.get(),
         )
 
     def save_current_settings(self, save_archive_state: bool = True) -> None:
@@ -590,11 +602,15 @@ class ComicRackMasterUI(tk.Tk):
         if not targets:
             messagebox.showinfo("ComicRack Library Master", "Select at least one non-English archive.")
             return
+        include_cg_galleries = self.translate_cg_var.get()
 
         def action() -> list[str]:
             total = len(targets)
             for index, record in enumerate(targets, start=1):
                 archive_path = source / record.relative_path
+                if not include_cg_galleries and is_artist_or_game_cg_archive(archive_path):
+                    self.append_log_from_worker(f"Skipped Artist/Game CG [{index}/{total}]: {record.relative_path}")
+                    continue
                 output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
                 output_before = file_signature(output_path)
                 self.append_log_from_worker(f"Translate [{index}/{total}]: {record.relative_path}")
@@ -711,6 +727,7 @@ class ComicRackMasterUI(tk.Tk):
             "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
+            "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
             "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
             "The path fields are saved in master_ui_settings.json beside this UI script.",

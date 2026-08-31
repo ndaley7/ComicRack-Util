@@ -46,6 +46,8 @@ function printProgress(event) {
     }
   } else if (event.type === 'image-start') {
     console.log(`[${event.index}/${event.total}] Translating ${event.filename}`);
+  } else if (event.type === 'image-cached') {
+    console.log(`[${event.index}/${event.total}] Reusing cached translation ${event.filename}`);
   } else if (event.type === 'image-complete') {
     const creditsText = event.creditsRemaining !== undefined ? ` Credits remaining: ${event.creditsRemaining}` : '';
     console.log(`[${event.index}/${event.total}] Done ${event.filename}.${creditsText}`);

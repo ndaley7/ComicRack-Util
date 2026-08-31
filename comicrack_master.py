@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -15,6 +16,7 @@ APP_CONFIG_FILENAME = "master_ui_settings.json"
 STATE_FILENAME = ".comicrack_master_state.json"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 TRANSLATED_DIR_NAME = "Translated"
+CG_GALLERY_CATEGORIES = {"artist cg", "game cg"}
 
 
 @dataclass
@@ -23,6 +25,7 @@ class AppSettings:
     remote_sync_target: str = ""
     fansadox_source: str = ""
     column_widths: dict[str, int] = field(default_factory=dict)
+    translate_cg_galleries: bool = False
 
 
 @dataclass
@@ -78,6 +81,7 @@ def load_app_settings(base_dir: Path | None = None) -> AppSettings:
         remote_sync_target=str(data.get("remote_sync_target", "")),
         fansadox_source=str(data.get("fansadox_source", "")),
         column_widths=column_widths,
+        translate_cg_galleries=bool(data.get("translate_cg_galleries", False)),
     )
 
 
@@ -158,6 +162,36 @@ def move_source_archive_to_translated_folder(archive_path: Path) -> Path:
     translated_dir.mkdir(parents=True, exist_ok=True)
     destination = unique_destination_path(translated_dir / archive_path.name)
     return Path(shutil.move(str(archive_path), str(destination)))
+
+
+def archive_info_text(archive_path: Path) -> str | None:
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            for name in archive.namelist():
+                if archive_basename(name) == "info.txt":
+                    try:
+                        return archive.read(name).decode("utf-8-sig", errors="replace")
+                    except (KeyError, RuntimeError, zipfile.BadZipFile):
+                        return ""
+    except (OSError, zipfile.BadZipFile):
+        return None
+    return None
+
+
+def gallery_category_from_info_text(content: str) -> str | None:
+    for line in content.splitlines():
+        match = re.match(r"\s*Category\s*[:=]\s*(.+?)\s*$", line, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
+def is_artist_or_game_cg_archive(archive_path: Path) -> bool:
+    content = archive_info_text(archive_path)
+    if content is None:
+        return False
+    category = gallery_category_from_info_text(content)
+    return category is not None and category.strip().casefold() in CG_GALLERY_CATEGORIES
 
 
 def read_archive_flags(archive_path: Path) -> tuple[bool, bool, bool, str]:

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from comicrack_master import (
     AppSettings,
+    gallery_category_from_info_text,
+    is_artist_or_game_cg_archive,
     load_app_settings,
     records_as_copy_list,
     load_source_state,
@@ -102,6 +104,27 @@ class ComicRackMasterTests(unittest.TestCase):
             self.assertTrue((translated_dir / "Original.cbz").is_file())
             self.assertTrue(moved.is_file())
 
+    def test_gallery_category_from_info_text_reads_category_line(self) -> None:
+        category = gallery_category_from_info_text(
+            "Title\nhttps://example.test/gallery\n\nCategory: Artist CG\nLanguage: Japanese\n"
+        )
+
+        self.assertEqual(category, "Artist CG")
+
+    def test_is_artist_or_game_cg_archive_detects_skipped_categories(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            artist = source / "Artist.cbz"
+            game = source / "Game.cbz"
+            manga = source / "Manga.cbz"
+            write_archive(artist, {"info.txt": "Category: Artist CG\nLanguage: Japanese\n"})
+            write_archive(game, {"nested/info.txt": "Category = Game CG\nLanguage: Japanese\n"})
+            write_archive(manga, {"info.txt": "Category: Manga\nLanguage: Japanese\n"})
+
+            self.assertTrue(is_artist_or_game_cg_archive(artist))
+            self.assertTrue(is_artist_or_game_cg_archive(game))
+            self.assertFalse(is_artist_or_game_cg_archive(manga))
+
     def test_records_as_copy_list_returns_current_record_paths(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)
@@ -130,7 +153,7 @@ class ComicRackMasterTests(unittest.TestCase):
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:
             base = Path(base_raw)
-            settings = AppSettings("C:/Comics", "D:/Remote", "E:/Fansadox", {"file": 900})
+            settings = AppSettings("C:/Comics", "D:/Remote", "E:/Fansadox", {"file": 900}, True)
             save_app_settings(settings, base)
 
             self.assertEqual(load_app_settings(base), settings)

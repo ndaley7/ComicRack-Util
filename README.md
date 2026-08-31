@@ -74,6 +74,9 @@ When **Translate** finishes an archive from the master UI and creates a new
 `-translatedENG` archive, the original archive is moved into a `Translated`
 subfolder. The UI then rescans the ComicRack Source folder, so the moved
 original disappears from the list and the new translated archive is added.
+By default, Translate skips archives whose `info.txt` contains
+`Category: Artist CG` or `Category: Game CG`; check **Artist/Game CG** beside
+the Translate button to include those galleries.
 
 Double-click a comic in the table to open it with the Windows app associated
 with that archive type.
@@ -178,6 +181,11 @@ It expects the archive to contain:
 - a metadata language line such as `Language: Chinese`
 
 The tool writes a new translated ZIP or CBZ beside the original. It does not overwrite the source archive.
+During translation, completed page outputs are stored in a temporary
+`<output archive>.work` folder beside the intended output archive. If the run
+fails partway through, rerunning the same input/output pair reuses those cached
+pages instead of sending them to Torii again. The work folder is removed after
+the translated archive is written successfully.
 
 Translation is skipped without contacting Torii when:
 
@@ -237,7 +245,8 @@ For each supported image in the archive, the tool:
 - sends the image to Torii with `target_lang=en`
 - replaces the archive entry with Torii's translated image result
 - processes images sequentially to respect Torii's rate limit
-- retries transient failures such as `429`, `503`, and network timeouts
+- reuses cached page translations from a previous failed run when available
+- retries transient failures such as `429`, upstream `5xx` errors, and network timeouts
 - logs remaining Torii credits after each image when Torii returns the `credits` response header
 
 For `info.txt`, the tool:
