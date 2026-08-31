@@ -57,6 +57,13 @@ You can also install it with the helper script:
 python .\install_gallery_tag_panel.py
 ```
 
+If ComicRack CE does not discover scripts from AppData, close ComicRack and
+install directly into the bundled script directory:
+
+```powershell
+python .\install_gallery_tag_panel.py --dest "C:\Program Files\ComicRack Community Edition\Scripts" --flat
+```
+
 The **Remove Dups** button runs the `RemoveDuplicates` utility against the
 ComicRack Source folder. It compares direct-child `.zip` and `.cbz` archives by
 SHA-256 when they share the same size, moves exact duplicates into

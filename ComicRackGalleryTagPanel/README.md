@@ -37,6 +37,14 @@ For classic ComicRack, run:
 python .\install_gallery_tag_panel.py --classic
 ```
 
+Some ComicRack CE installs only scan the program install `Scripts` folder. If
+the scripts do not appear in preferences or the Automation menu after a normal
+install, close ComicRack and install flat into the bundled scripts folder:
+
+```powershell
+python .\install_gallery_tag_panel.py --dest "C:\Program Files\ComicRack Community Edition\Scripts" --flat
+```
+
 To preview the copy without writing files:
 
 ```powershell

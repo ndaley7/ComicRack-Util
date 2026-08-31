@@ -14,6 +14,7 @@ CLASSIC_APPDATA_PATH = Path("cYo") / "ComicRack" / "Scripts"
 CE_APPDATA_PATH = Path("cYo") / "ComicRack Community Edition" / "Scripts"
 IGNORED_DIRS = {".git", "__pycache__"}
 IGNORED_SUFFIXES = {".pyc", ".pyo"}
+FLAT_IGNORED_NAMES = {"README.md"}
 
 
 def default_scripts_dir(use_classic: bool) -> Path:
@@ -21,7 +22,9 @@ def default_scripts_dir(use_classic: bool) -> Path:
     return appdata / (CLASSIC_APPDATA_PATH if use_classic else CE_APPDATA_PATH)
 
 
-def should_copy(path: Path) -> bool:
+def should_copy(path: Path, flat: bool = False) -> bool:
+    if flat and path.name in FLAT_IGNORED_NAMES:
+        return False
     if path.name in IGNORED_DIRS:
         return False
     if path.suffix.lower() in IGNORED_SUFFIXES:
@@ -29,17 +32,17 @@ def should_copy(path: Path) -> bool:
     return True
 
 
-def copy_plugin(source_dir: Path, scripts_dir: Path, dry_run: bool = False) -> Path:
+def copy_plugin(source_dir: Path, scripts_dir: Path, dry_run: bool = False, flat: bool = False) -> Path:
     if not source_dir.is_dir():
         raise FileNotFoundError(f"Plugin folder not found: {source_dir}")
 
-    destination_dir = scripts_dir / source_dir.name
+    destination_dir = scripts_dir if flat else scripts_dir / source_dir.name
     copied = 0
 
     for source_path in source_dir.rglob("*"):
-        if not all(should_copy(part) for part in source_path.relative_to(source_dir).parents):
+        if not all(should_copy(part, flat) for part in source_path.relative_to(source_dir).parents):
             continue
-        if not should_copy(source_path):
+        if not should_copy(source_path, flat):
             continue
         if not source_path.is_file():
             continue
@@ -92,6 +95,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Print what would be copied without writing files.",
     )
+    parser.add_argument(
+        "--flat",
+        action="store_true",
+        help="Copy plugin files directly into the Scripts folder instead of a subfolder.",
+    )
     return parser.parse_args(argv)
 
 
@@ -101,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     scripts_dir = (args.dest or default_scripts_dir(args.classic)).resolve()
 
     try:
-        copy_plugin(source_dir, scripts_dir, args.dry_run)
+        copy_plugin(source_dir, scripts_dir, args.dry_run, args.flat)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
