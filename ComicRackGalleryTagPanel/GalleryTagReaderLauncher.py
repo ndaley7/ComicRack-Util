@@ -5,6 +5,8 @@
 #@Description Shows a small floating Tags launcher while reading.
 
 import clr
+import os
+import sys
 clr.AddReference("System.Drawing")
 clr.AddReference("System.Windows.Forms")
 
@@ -19,6 +21,10 @@ from System.Windows.Forms import (
     Label,
     Padding,
 )
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ""
+if SCRIPT_DIR and SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
 from GalleryTagPanel import show_gallery_tag_panel
 from gallery_tag_core import title_for_book
@@ -56,12 +62,19 @@ class ReaderTagLauncher(Form):
         self.tags_button.Text = "Tags"
         self.tags_button.Width = 72
         self.tags_button.Height = 34
+        self.tags_button.Enabled = False
         self.tags_button.Click += self._show_tags
         layout.Controls.Add(self.tags_button)
+
+    def wait_for_book(self):
+        self.current_book = None
+        self.title_label.Text = "Open a comic to browse tags."
+        self.tags_button.Enabled = False
 
     def set_book(self, book):
         self.current_book = book
         self.title_label.Text = title_for_book(book)
+        self.tags_button.Enabled = True
 
     def _show_tags(self, sender, event):
         if self.current_book is not None:
@@ -72,18 +85,15 @@ def place_launcher(form):
     try:
         owner = ComicRack.MainWindow
         bounds = owner.Bounds
-        form.Left = bounds.Right - form.Width - 32
-        form.Top = bounds.Top + 96
+        form.Left = bounds.Left + 24
+        form.Top = bounds.Top + 86
     except Exception:
         form.Left = 80
         form.Top = 80
 
 
-def GalleryTagReaderLauncher(book):
+def ensure_launcher():
     global LAUNCHER
-
-    if book is None:
-        return
 
     if LAUNCHER is None or LAUNCHER.IsDisposed:
         LAUNCHER = ReaderTagLauncher()
@@ -93,8 +103,30 @@ def GalleryTagReaderLauncher(book):
         except Exception:
             LAUNCHER.Show()
 
-    LAUNCHER.set_book(book)
+    return LAUNCHER
+
+
+def GalleryTagReaderLauncher(book):
+    if book is None:
+        return
+
+    launcher = ensure_launcher()
+    launcher.set_book(book)
     try:
-        LAUNCHER.Activate()
+        launcher.Activate()
+    except Exception:
+        pass
+
+
+#@Name Gallery Tags Startup Launcher
+#@Key GalleryTagStartupLauncher
+#@Hook Startup
+#@Enabled true
+#@Description Shows the floating Tags launcher when ComicRack starts.
+def GalleryTagStartupLauncher():
+    launcher = ensure_launcher()
+    launcher.wait_for_book()
+    try:
+        launcher.Activate()
     except Exception:
         pass

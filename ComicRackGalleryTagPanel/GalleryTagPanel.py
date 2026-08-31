@@ -5,6 +5,8 @@
 #@Description E-H style tag browser panel for the selected comic.
 
 import clr
+import os
+import sys
 clr.AddReference("System")
 clr.AddReference("System.Drawing")
 clr.AddReference("System.Windows.Forms")
@@ -36,6 +38,10 @@ from System.Windows.Forms import (
     TableLayoutPanel,
     TextBox,
 )
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else ""
+if SCRIPT_DIR and SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
 from gallery_tag_core import (
     book_matches_filters,
