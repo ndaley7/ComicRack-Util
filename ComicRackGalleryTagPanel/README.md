@@ -74,14 +74,14 @@ Manual install is also fine:
    Right-click -> Automation -> GalleryTagPanel
    ```
 
-`GalleryTagStartupLauncher` shows a small floating `Tags` window near the upper
-left of the ComicRack window when ComicRack starts. It says `Open a comic to
-browse tags` until a reader tab opens. When you open a comic in the reader,
+`Gallery Tags Startup Launcher` shows a small floating `Tags` window near the
+upper left of the ComicRack window when ComicRack starts. It says `Open a comic
+to browse tags` until a reader tab opens. When you open a comic in the reader,
 `GalleryTagReaderLauncher` updates that window for the current book. Click its
 `Tags` button to open the same grouped tag panel for the comic currently being
-read. If you do not want the floating reader launcher, disable
-`GalleryTagStartupLauncher` and `GalleryTagReaderLauncher` in ComicRack's
-Scripts preferences.
+read. If you do not want the floating reader launcher, disable `Gallery Tags
+Startup Launcher` and `GalleryTagReaderLauncher` in ComicRack's Scripts
+preferences.
 
 If it does not appear, open preferences and make sure the script is enabled.
 

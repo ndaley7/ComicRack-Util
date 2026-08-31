@@ -116,17 +116,3 @@ def GalleryTagReaderLauncher(book):
         launcher.Activate()
     except Exception:
         pass
-
-
-#@Name Gallery Tags Startup Launcher
-#@Key GalleryTagStartupLauncher
-#@Hook Startup
-#@Enabled true
-#@Description Shows the floating Tags launcher when ComicRack starts.
-def GalleryTagStartupLauncher():
-    launcher = ensure_launcher()
-    launcher.wait_for_book()
-    try:
-        launcher.Activate()
-    except Exception:
-        pass
