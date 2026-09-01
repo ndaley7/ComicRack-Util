@@ -7,6 +7,7 @@ from comicrack_master import (
     AppSettings,
     gallery_category_from_info_text,
     is_artist_or_game_cg_archive,
+    is_translated_archive_name,
     load_app_settings,
     records_as_copy_list,
     load_source_state,
@@ -59,6 +60,16 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source, previous_state=load_source_state(source))
 
             self.assertFalse(records[0].selected)
+
+    def test_scan_treats_translated_eng_filename_as_english(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Sample-translatedENG.cbz", {"info.txt": "Language: Japanese\r\n"})
+
+            records = scan_source_directory(source)
+
+            self.assertTrue(is_translated_archive_name("Sample-translatedENG.cbz"))
+            self.assertTrue(records[0].english)
 
     def test_scan_ignores_archives_in_subdirectories(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:

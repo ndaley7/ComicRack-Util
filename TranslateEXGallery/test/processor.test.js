@@ -158,6 +158,29 @@ test('skips without Torii calls when ZIP filename contains the word English', as
   assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
 });
 
+test('skips without Torii calls when archive filename ends with translatedENG', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample-translatedENG.cbz');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('already-translated-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Japanese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created for translatedENG archives.');
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, true);
+  assert.match(result.reason, /translatedENG/);
+  assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});
+
 test('skips without Torii calls when info.txt is missing', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
   const inputZipPath = path.join(tempDir, 'sample.zip');

@@ -18,6 +18,7 @@ from comicrack_master import (
     AppSettings,
     ArchiveRecord,
     is_artist_or_game_cg_archive,
+    is_translated_archive_name,
     load_app_settings,
     load_source_state,
     move_source_archive_to_translated_folder,
@@ -689,6 +690,9 @@ class ComicRackMasterUI(tk.Tk):
             total = len(targets)
             for index, record in enumerate(targets, start=1):
                 archive_path = source / record.relative_path
+                if is_translated_archive_name(record.filename):
+                    self.append_log_from_worker(f"Skipped already translated [{index}/{total}]: {record.relative_path}")
+                    continue
                 if not include_cg_galleries and is_artist_or_game_cg_archive(archive_path):
                     self.append_log_from_worker(f"Skipped Artist/Game CG [{index}/{total}]: {record.relative_path}")
                     continue

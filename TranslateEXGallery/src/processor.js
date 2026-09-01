@@ -46,6 +46,10 @@ function hasEnglishWordInFilename(filePath) {
   return /\benglish\b/i.test(path.basename(filePath));
 }
 
+function hasTranslatedEngSuffix(filePath) {
+  return path.parse(filePath).name.toLowerCase().endsWith('translatedeng');
+}
+
 function isGifImageEntry(entryName) {
   return path.posix.extname(entryName).toLowerCase() === '.gif';
 }
@@ -206,6 +210,17 @@ export async function translateGalleryZip({
 
   if (hasEnglishWordInFilename(resolvedInputPath)) {
     const reason = 'Archive filename contains the word English.';
+    onProgress({ type: 'skipped', reason });
+    return {
+      skipped: true,
+      reason,
+      inputZipPath: resolvedInputPath,
+      imageCount: 0
+    };
+  }
+
+  if (hasTranslatedEngSuffix(resolvedInputPath)) {
+    const reason = 'Archive filename ends with translatedENG.';
     onProgress({ type: 'skipped', reason });
     return {
       skipped: true,

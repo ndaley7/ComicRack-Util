@@ -196,6 +196,7 @@ the translated archive is written successfully.
 Translation is skipped without contacting Torii when:
 
 - the archive filename contains the word `English`, case-insensitively
+- the archive filename stem ends with `translatedENG`, case-insensitively
 - the archive does not contain an `info.txt` file
 
 ## Setup

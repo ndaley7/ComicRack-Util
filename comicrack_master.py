@@ -17,6 +17,7 @@ STATE_FILENAME = ".comicrack_master_state.json"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 TRANSLATED_DIR_NAME = "Translated"
 CG_GALLERY_CATEGORIES = {"artist cg", "game cg"}
+TRANSLATED_ENG_SUFFIX = "translatedeng"
 
 
 @dataclass
@@ -147,6 +148,10 @@ def archive_basename(name: str) -> str:
     return Path(normalized_archive_name(name)).name.lower()
 
 
+def is_translated_archive_name(name: str) -> bool:
+    return Path(name).stem.casefold().endswith(TRANSLATED_ENG_SUFFIX)
+
+
 def unique_destination_path(destination: Path) -> Path:
     if not destination.exists():
         return destination
@@ -269,6 +274,7 @@ def scan_source_directory(
         default_selected = suffix == ".cbz"
         selected = bool(previous.get("selected", default_selected)) if isinstance(previous, dict) else default_selected
         filename_says_english = "english" in archive_path.name.lower()
+        filename_says_translated = is_translated_archive_name(archive_path.name)
 
         stat = archive_path.stat()
         records.append(
@@ -279,7 +285,7 @@ def scan_source_directory(
                 cbz=suffix == ".cbz",
                 has_info=has_info,
                 has_comicinfo=has_comicinfo,
-                english=filename_says_english or info_says_english,
+                english=filename_says_english or filename_says_translated or info_says_english,
                 synced=is_synced(archive_path, source_dir, remote_sync_target),
                 size=stat.st_size,
                 modified=stat.st_mtime,
