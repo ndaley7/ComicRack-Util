@@ -2,13 +2,14 @@
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { translateGalleryZip } from './processor.js';
 import { ToriiClient } from './toriiClient.js';
 import { defaultOutputPath } from './zipUtils.js';
 
 const COST_RATIO_TEXT = '$13 / 6000 credits';
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -20,6 +21,8 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === '--super-saver') {
       args.superSaverMode = true;
+    } else if (arg === '--paddle-ocr-cuda') {
+      args.paddleOcrCuda = true;
     } else if (!args.inputZipPath) {
       args.inputZipPath = arg;
     }
@@ -120,6 +123,7 @@ async function main() {
     inputZipPath: path.resolve(args.inputZipPath),
     outputZipPath: path.resolve(args.outputZipPath),
     superSaverMode: args.superSaverMode === true,
+    paddleOcrDevice: args.paddleOcrCuda === true ? 'gpu:0' : undefined,
     createToriiClient: () => new ToriiClient(),
     onProgress: printProgress
   });
@@ -142,7 +146,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Error: ${error.message}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`Error: ${error.message}`);
+    process.exitCode = 1;
+  });
+}

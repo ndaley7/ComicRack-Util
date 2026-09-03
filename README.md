@@ -24,6 +24,14 @@ same heading again reverses the sort. Drag table heading borders to resize
 columns; those widths persist between runs. Use the bottom **Comic List** button
 to open a copyable plain-text list of the currently loaded comics.
 
+The workflow columns are ordered as **CBZ**, **Info**, **ENGLISH**,
+**ComicInfo**, and **Synced**. When you run a later workflow tool from the UI,
+the UI confirms the preceding columns first and runs missing prerequisite steps
+when it can. For example, **Translate** first confirms CBZ and `info.txt`, and
+**Sync Selected** brings selected archives through CBZ, Info, English, and
+ComicInfo before copying. If `info.txt` is missing, that archive is skipped for
+Translate, ComicInfo, or Sync, and the rest of the selected batch continues.
+
 ## ComicRack Gallery Tag Panel
 
 `ComicRackGalleryTagPanel` is an experimental ComicRack / ComicRack Community
@@ -77,9 +85,14 @@ original disappears from the list and the new translated archive is added.
 By default, Translate skips archives whose `info.txt` contains
 `Category: Artist CG` or `Category: Game CG`; check **Artist/Game CG** beside
 the Translate button to include those galleries.
+Archives whose `info.txt` contains `Category: Western` are treated as already
+translated and show **Yes** in the ENGLISH column.
 **Super-Saver mode** is unchecked by default. When checked, Translate uses
 PaddleOCR text detection before each uncached page upload and skips pages where
 no text boxes are found.
+**CUDA OCR** is also unchecked by default. When checked together with
+Super-Saver mode, PaddleOCR text detection runs on CUDA GPU 0 and requires a
+compatible `paddlepaddle-gpu` install.
 While translating, the bottom progress bar switches to the current archive's
 image count, such as `(1/200)`, and advances as page translations complete or
 cached pages are reused.
@@ -217,6 +230,10 @@ setup:
 py -3.13 -m pip install -r .\requirements-super-saver.txt
 ```
 
+To use **CUDA OCR** from the master UI, install a compatible GPU build of
+PaddlePaddle in the Python environment used by PaddleOCR, then leave
+`PADDLEOCR_PYTHON` pointed at that environment.
+
 From the repository root, `py -3.13 -m pip install -r .\requirements.txt`
 installs the Python dependencies for every tool in the suite.
 If the master UI is running under a different Python, set `PADDLEOCR_PYTHON`
@@ -265,6 +282,12 @@ Enable PaddleOCR preflight text detection from the CLI with:
 npm start -- --zip "C:\path\to\comic.cbz" --super-saver
 ```
 
+Use CUDA GPU 0 for that PaddleOCR text detection with:
+
+```powershell
+npm start -- --zip "C:\path\to\comic.cbz" --super-saver --paddle-ocr-cuda
+```
+
 ## Behavior
 
 For each supported image in the archive, the tool:
@@ -275,6 +298,7 @@ For each supported image in the archive, the tool:
 - copies `.gif` entries unchanged instead of sending them to Torii or PaddleOCR
 - reuses cached page translations from a previous failed run when available
 - in Super-Saver mode, skips Torii uploads for uncached pages where PaddleOCR detects no text boxes
+- with `--paddle-ocr-cuda`, asks PaddleOCR to use `gpu:0` for Super-Saver text detection
 - retries transient failures such as `429`, upstream `5xx` errors, and network timeouts
 - logs remaining Torii credits after each image when Torii returns the `credits` response header
 

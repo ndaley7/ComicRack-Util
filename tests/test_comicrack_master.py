@@ -6,6 +6,7 @@ from pathlib import Path
 from comicrack_master import (
     AppSettings,
     gallery_category_from_info_text,
+    info_text_indicates_english,
     is_artist_or_game_cg_archive,
     is_translated_archive_name,
     load_app_settings,
@@ -71,6 +72,15 @@ class ComicRackMasterTests(unittest.TestCase):
             self.assertTrue(is_translated_archive_name("Sample-translatedENG.cbz"))
             self.assertTrue(records[0].english)
 
+    def test_scan_treats_western_category_as_english(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Western.cbz", {"info.txt": "Category: Western\nLanguage: Japanese\n"})
+
+            records = scan_source_directory(source)
+
+            self.assertTrue(records[0].english)
+
     def test_scan_ignores_archives_in_subdirectories(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)
@@ -122,6 +132,11 @@ class ComicRackMasterTests(unittest.TestCase):
 
         self.assertEqual(category, "Artist CG")
 
+    def test_info_text_indicates_english_for_western_category(self) -> None:
+        self.assertTrue(info_text_indicates_english("Category: Western\nLanguage: Japanese\n"))
+        self.assertTrue(info_text_indicates_english("Category = western\nLanguage: Japanese\n"))
+        self.assertFalse(info_text_indicates_english("Category: Manga\nLanguage: Japanese\n"))
+
     def test_is_artist_or_game_cg_archive_detects_skipped_categories(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)
@@ -164,10 +179,31 @@ class ComicRackMasterTests(unittest.TestCase):
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:
             base = Path(base_raw)
-            settings = AppSettings("C:/Comics", "D:/Remote", "E:/Fansadox", {"file": 900}, True)
+            settings = AppSettings(
+                comicrack_source="C:/Comics",
+                remote_sync_target="D:/Remote",
+                fansadox_source="E:/Fansadox",
+                column_widths={"file": 900},
+                translate_cg_galleries=True,
+                super_saver_mode=True,
+                paddle_ocr_cuda_enabled=True,
+            )
             save_app_settings(settings, base)
 
             self.assertEqual(load_app_settings(base), settings)
+
+    def test_app_settings_defaults_paddle_ocr_cuda_disabled_for_old_config(self) -> None:
+        with tempfile.TemporaryDirectory() as base_raw:
+            base = Path(base_raw)
+            (base / "master_ui_settings.json").write_text(
+                '{"comicrack_source": "C:/Comics", "super_saver_mode": true}',
+                encoding="utf-8",
+            )
+
+            settings = load_app_settings(base)
+
+            self.assertTrue(settings.super_saver_mode)
+            self.assertFalse(settings.paddle_ocr_cuda_enabled)
 
     def test_app_settings_ignores_invalid_column_widths(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:

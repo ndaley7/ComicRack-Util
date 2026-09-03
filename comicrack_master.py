@@ -17,6 +17,7 @@ STATE_FILENAME = ".comicrack_master_state.json"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 TRANSLATED_DIR_NAME = "Translated"
 CG_GALLERY_CATEGORIES = {"artist cg", "game cg"}
+TRANSLATED_CATEGORIES = {"western"}
 TRANSLATED_ENG_SUFFIX = "translatedeng"
 
 
@@ -28,6 +29,7 @@ class AppSettings:
     column_widths: dict[str, int] = field(default_factory=dict)
     translate_cg_galleries: bool = False
     super_saver_mode: bool = False
+    paddle_ocr_cuda_enabled: bool = False
 
 
 @dataclass
@@ -85,6 +87,7 @@ def load_app_settings(base_dir: Path | None = None) -> AppSettings:
         column_widths=column_widths,
         translate_cg_galleries=bool(data.get("translate_cg_galleries", False)),
         super_saver_mode=bool(data.get("super_saver_mode", False)),
+        paddle_ocr_cuda_enabled=bool(data.get("paddle_ocr_cuda_enabled", False)),
     )
 
 
@@ -201,6 +204,13 @@ def is_artist_or_game_cg_archive(archive_path: Path) -> bool:
     return category is not None and category.strip().casefold() in CG_GALLERY_CATEGORIES
 
 
+def info_text_indicates_english(content: str) -> bool:
+    category = gallery_category_from_info_text(content)
+    return "english" in content.lower() or (
+        category is not None and category.strip().casefold() in TRANSLATED_CATEGORIES
+    )
+
+
 def read_archive_flags(archive_path: Path) -> tuple[bool, bool, bool, str]:
     has_info = False
     has_comicinfo = False
@@ -218,7 +228,7 @@ def read_archive_flags(archive_path: Path) -> tuple[bool, bool, bool, str]:
                         content = archive.read(name).decode("utf-8-sig", errors="replace")
                     except (KeyError, RuntimeError, zipfile.BadZipFile):
                         content = ""
-                    if "english" in content.lower():
+                    if info_text_indicates_english(content):
                         info_says_english = True
     except zipfile.BadZipFile:
         return False, False, False, "Invalid ZIP/CBZ archive."

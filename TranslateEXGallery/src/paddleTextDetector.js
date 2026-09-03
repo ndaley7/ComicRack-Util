@@ -36,16 +36,32 @@ function detectionImagePath(workDir, filename, imageBuffer, sourceHash) {
   return path.join(workDir, 'text-detection', `${basename}${ext}`);
 }
 
+export function detectorProcessArgs({ pythonArgs = [], detectorScript, minScore, device }) {
+  const args = [
+    ...pythonArgs,
+    detectorScript,
+    '--jsonl',
+    '--min-score',
+    String(minScore)
+  ];
+  if (device) {
+    args.push('--device', device);
+  }
+  return args;
+}
+
 export class PaddleOcrTextDetector {
   constructor({
     pythonCommand,
     pythonExecutable,
     detectorScript = DEFAULT_DETECTOR_SCRIPT,
+    device,
     minScore = 0.6,
     timeoutMs = 180000
   } = {}) {
     this.pythonCommand = pythonCommand ?? (pythonExecutable ? [pythonExecutable] : defaultPythonCommand());
     this.detectorScript = detectorScript;
+    this.device = device;
     this.minScore = minScore;
     this.timeoutMs = timeoutMs;
     this.process = null;
@@ -103,13 +119,12 @@ export class PaddleOcrTextDetector {
     }
 
     const [pythonExecutableName, ...pythonArgs] = this.pythonCommand;
-    this.process = spawn(pythonExecutableName, [
-      ...pythonArgs,
-      this.detectorScript,
-      '--jsonl',
-      '--min-score',
-      String(this.minScore)
-    ], {
+    this.process = spawn(pythonExecutableName, detectorProcessArgs({
+      pythonArgs,
+      detectorScript: this.detectorScript,
+      minScore: this.minScore,
+      device: this.device
+    }), {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

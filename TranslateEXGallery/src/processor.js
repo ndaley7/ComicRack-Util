@@ -192,6 +192,7 @@ export async function translateGalleryZip({
   toriiClient,
   createToriiClient,
   superSaverMode = false,
+  paddleOcrDevice,
   textDetector,
   createTextDetector,
   onProgress = () => {}
@@ -300,7 +301,8 @@ export async function translateGalleryZip({
   let createdTextDetector;
   try {
     if (pendingImageCount > 0 && superSaverMode && !activeTextDetector) {
-      createdTextDetector = createTextDetector?.() ?? new PaddleOcrTextDetector();
+      const detectorOptions = { device: paddleOcrDevice };
+      createdTextDetector = createTextDetector?.(detectorOptions) ?? new PaddleOcrTextDetector(detectorOptions);
       activeTextDetector = createdTextDetector;
     }
     if (pendingImageCount > 0 && superSaverMode && !activeTextDetector) {

@@ -25,12 +25,13 @@ INSTALL_HELP = (
 )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detect whether images contain text using PaddleOCR.")
     parser.add_argument("images", nargs="*", help="Image paths to inspect outside JSON-lines mode.")
     parser.add_argument("--jsonl", action="store_true", help="Read requests from stdin and write JSON responses to stdout.")
     parser.add_argument("--min-score", type=float, default=0.6, help="Minimum PaddleOCR box score counted as text.")
-    return parser.parse_args()
+    parser.add_argument("--device", help='PaddleOCR inference device, such as "gpu:0".')
+    return parser.parse_args(argv)
 
 
 def import_text_detection() -> Any:
@@ -89,10 +90,13 @@ def count_polys(value: Any) -> int:
 
 
 class PaddleTextDetector:
-    def __init__(self, min_score: float) -> None:
+    def __init__(self, min_score: float, device: str | None = None) -> None:
         with contextlib.redirect_stdout(sys.stderr):
             TextDetection = import_text_detection()
-            self.model = TextDetection(engine="paddle")
+            model_options: dict[str, Any] = {"engine": "paddle"}
+            if device:
+                model_options["device"] = device
+            self.model = TextDetection(**model_options)
         self.min_score = min_score
 
     def detect(self, image_path: str) -> dict[str, Any]:
@@ -145,7 +149,7 @@ def jsonl_loop(detector: PaddleTextDetector) -> int:
 
 def main() -> int:
     args = parse_args()
-    detector = PaddleTextDetector(min_score=args.min_score)
+    detector = PaddleTextDetector(min_score=args.min_score, device=args.device)
     if args.jsonl:
         return jsonl_loop(detector)
 

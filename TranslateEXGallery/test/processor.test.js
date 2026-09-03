@@ -317,6 +317,41 @@ test('super-saver does not create Torii client when no images contain text', asy
   assert.equal(outputZip.readFile('Gallery/art-page.webp').toString('utf8'), 'art-page-image');
 });
 
+test('super-saver creates PaddleOCR detector with configured CUDA device', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.zip');
+  const outputZipPath = path.join(tempDir, 'sample.translated.zip');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/art-page.webp', Buffer.from('art-page-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: Korean\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  let seenDetectorOptions;
+  const result = await translateGalleryZip({
+    inputZipPath,
+    outputZipPath,
+    superSaverMode: true,
+    paddleOcrDevice: 'gpu:0',
+    createTextDetector(options) {
+      seenDetectorOptions = options;
+      return {
+        async hasText() {
+          return { hasText: false, boxCount: 0 };
+        },
+        async close() {}
+      };
+    },
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created when no text is detected.');
+    }
+  });
+
+  assert.deepEqual(seenDetectorOptions, { device: 'gpu:0' });
+  assert.equal(result.translatedImageCount, 0);
+  assert.equal(result.skippedNoTextImageCount, 1);
+});
+
 test('super-saver translates a page when text detection fails', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
   const inputZipPath = path.join(tempDir, 'sample.zip');

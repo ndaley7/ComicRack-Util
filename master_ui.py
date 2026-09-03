@@ -24,6 +24,7 @@ from comicrack_master import (
     move_source_archive_to_translated_folder,
     repo_root,
     records_as_copy_list,
+    read_archive_flags,
     save_app_settings,
     save_source_state,
     scan_source_directory,
@@ -35,13 +36,14 @@ from comicrack_master import (
 
 YES = "Yes"
 NO = "No"
+PADDLE_OCR_CUDA_FLAG = "--paddle-ocr-cuda"
 TREE_HEADINGS = {
     "selected": "Use",
     "file": "File",
     "cbz": "CBZ",
     "info": "Info",
-    "comicinfo": "ComicInfo",
     "english": "ENGLISH",
+    "comicinfo": "ComicInfo",
     "synced": "Synced",
     "error": "Status",
 }
@@ -51,8 +53,8 @@ DEFAULT_COLUMN_WIDTHS = {
     "file": 430,
     "cbz": 92,
     "info": 92,
-    "comicinfo": 92,
     "english": 92,
+    "comicinfo": 92,
     "synced": 92,
     "error": 150,
 }
@@ -61,8 +63,8 @@ COLUMN_MIN_WIDTHS = {
     "file": 240,
     "cbz": 82,
     "info": 82,
-    "comicinfo": 82,
     "english": 82,
+    "comicinfo": 82,
     "synced": 82,
     "error": 100,
 }
@@ -140,6 +142,32 @@ def file_signature(path: Path) -> tuple[int, int] | None:
     return stat.st_size, stat.st_mtime_ns
 
 
+def archive_english_status(archive_path: Path, info_says_english: bool) -> bool:
+    return (
+        "english" in archive_path.name.lower()
+        or is_translated_archive_name(archive_path.name)
+        or info_says_english
+    )
+
+
+def archive_record_from_path(source_dir: Path, archive_path: Path, selected: bool = True) -> ArchiveRecord:
+    has_info, has_comicinfo, info_says_english, error = read_archive_flags(archive_path)
+    stat = archive_path.stat()
+    return ArchiveRecord(
+        relative_path=archive_path.relative_to(source_dir).as_posix(),
+        filename=archive_path.name,
+        selected=selected,
+        cbz=archive_path.suffix.lower() == ".cbz",
+        has_info=has_info,
+        has_comicinfo=has_comicinfo,
+        english=archive_english_status(archive_path, info_says_english),
+        synced=False,
+        size=stat.st_size,
+        modified=stat.st_mtime,
+        error=error,
+    )
+
+
 def open_archive_with_default_app(path: Path | str) -> None:
     startfile = getattr(os, "startfile", None)
     if not callable(startfile):
@@ -161,6 +189,20 @@ def translate_image_progress_from_line(line: str) -> tuple[int, int, bool] | Non
     total = int(match.group("total"))
     completed = match.group("action") in {"Done", "Reusing cached translation", "No text found", "Keeping original"}
     return index, total, completed
+
+
+def translate_command(
+    archive_path: Path,
+    output_path: Path,
+    super_saver_mode: bool,
+    paddle_ocr_cuda_enabled: bool,
+) -> list[str]:
+    command = ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)]
+    if super_saver_mode:
+        command.append("--super-saver")
+        if paddle_ocr_cuda_enabled:
+            command.append(PADDLE_OCR_CUDA_FLAG)
+    return command
 
 
 class Tooltip:
@@ -195,6 +237,10 @@ class Tooltip:
             self.window = None
 
 
+class SkipArchive(RuntimeError):
+    """Raised when one archive should be skipped without failing the full batch."""
+
+
 class ComicRackMasterUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -209,6 +255,7 @@ class ComicRackMasterUI(tk.Tk):
         self.fansadox_var = tk.StringVar(value=self.settings.fansadox_source)
         self.translate_cg_var = tk.BooleanVar(value=self.settings.translate_cg_galleries)
         self.super_saver_var = tk.BooleanVar(value=self.settings.super_saver_mode)
+        self.paddle_ocr_cuda_var = tk.BooleanVar(value=self.settings.paddle_ocr_cuda_enabled)
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
         self.progress_text_var = tk.StringVar(value="")
@@ -253,21 +300,20 @@ class ComicRackMasterUI(tk.Tk):
 
         toolbar = ttk.Frame(self, padding=(10, 0, 10, 6))
         toolbar.grid(row=1, column=0, sticky="ew")
-        toolbar.columnconfigure(11, weight=1)
+        toolbar.columnconfigure(12, weight=1)
 
         self._add_button(toolbar, "Rescan", self.rescan, 0, "Force-refresh archive status from the ComicRack Source folder.")
         self._add_button(toolbar, "Select All", self.select_all, 1, "Select every listed archive.")
         self._add_button(toolbar, "Select None", self.select_none, 2, "Clear all archive selections.")
         self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Rename selected ZIP archives to CBZ and flatten a redundant same-named top-level folder when present.")
-        self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 4, "Add ComicInfo.xml to selected CBZ archives that contain root info.txt.")
-        self._add_button(toolbar, "Translate", self.translate_selected, 5, "Run TranslateEXGallery for selected non-English archives.")
+        self._add_button(toolbar, "Translate", self.translate_selected, 4, "Confirm CBZ and info.txt first, then run TranslateEXGallery for selected non-English archives.")
         translate_cg_check = ttk.Checkbutton(
             toolbar,
             text="Artist/Game CG",
             variable=self.translate_cg_var,
             command=lambda: self.save_current_settings(save_archive_state=False),
         )
-        translate_cg_check.grid(row=0, column=6, padx=(0, 6), pady=2)
+        translate_cg_check.grid(row=0, column=5, padx=(0, 6), pady=2)
         Tooltip(translate_cg_check, "Allow Translate to process archives whose info.txt category is Artist CG or Game CG.")
         self.action_buttons.append(translate_cg_check)
         super_saver_check = ttk.Checkbutton(
@@ -276,15 +322,28 @@ class ComicRackMasterUI(tk.Tk):
             variable=self.super_saver_var,
             command=lambda: self.save_current_settings(save_archive_state=False),
         )
-        super_saver_check.grid(row=0, column=7, padx=(0, 6), pady=2)
+        super_saver_check.grid(row=0, column=6, padx=(0, 6), pady=2)
         Tooltip(super_saver_check, "Use PaddleOCR to skip translating pages where no text boxes are detected.")
         self.action_buttons.append(super_saver_check)
-        self._add_button(toolbar, "Sync Selected", self.sync_selected, 8, "Copy selected archives to the Remote Sync Target folder.")
-        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 9, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
-        self._add_button(toolbar, "Help", self.show_help, 10, "Show a quick guide for this master UI.")
+        paddle_ocr_cuda_check = ttk.Checkbutton(
+            toolbar,
+            text="CUDA OCR",
+            variable=self.paddle_ocr_cuda_var,
+            command=lambda: self.save_current_settings(save_archive_state=False),
+        )
+        paddle_ocr_cuda_check.grid(row=0, column=7, padx=(0, 6), pady=2)
+        Tooltip(
+            paddle_ocr_cuda_check,
+            "Run Super-Saver PaddleOCR text detection on CUDA GPU 0. Requires a GPU-enabled PaddlePaddle install.",
+        )
+        self.action_buttons.append(paddle_ocr_cuda_check)
+        self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 8, "Confirm CBZ, info.txt, and English first, then add ComicInfo.xml.")
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 9, "Copy selected archives to the Remote Sync Target folder.")
+        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 10, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
+        self._add_button(toolbar, "Help", self.show_help, 11, "Show a quick guide for this master UI.")
 
         self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
-        self.selected_label.grid(row=0, column=11, sticky="e", padx=(8, 0))
+        self.selected_label.grid(row=0, column=12, sticky="e", padx=(8, 0))
 
         list_frame = ttk.Frame(self, padding=(10, 0, 10, 4))
         list_frame.grid(row=2, column=0, sticky="nsew")
@@ -403,6 +462,7 @@ class ComicRackMasterUI(tk.Tk):
             column_widths=self.current_column_widths(),
             translate_cg_galleries=self.translate_cg_var.get(),
             super_saver_mode=self.super_saver_var.get(),
+            paddle_ocr_cuda_enabled=self.paddle_ocr_cuda_var.get(),
         )
 
     def save_current_settings(self, save_archive_state: bool = True) -> None:
@@ -535,8 +595,8 @@ class ComicRackMasterUI(tk.Tk):
                     record.relative_path,
                     YES if record.cbz else NO,
                     YES if record.has_info else NO,
-                    YES if record.has_comicinfo else NO,
                     YES if record.english else NO,
+                    YES if record.has_comicinfo else NO,
                     YES if record.synced else NO,
                     record.error,
                 ),
@@ -618,11 +678,224 @@ class ComicRackMasterUI(tk.Tk):
 
         self.status_var.set(f"Opened {record.relative_path}")
 
+    def archive_display_path(self, source: Path, archive_path: Path) -> str:
+        try:
+            return archive_path.relative_to(source).as_posix()
+        except ValueError:
+            return str(archive_path)
+
+    def selected_archive_path(self, source: Path, record: ArchiveRecord) -> Path:
+        archive_path = source / record.relative_path
+        if archive_path.is_file():
+            return archive_path
+        if archive_path.suffix.lower() == ".zip":
+            cbz_path = archive_path.with_suffix(".cbz")
+            if cbz_path.is_file():
+                return cbz_path
+        return archive_path
+
+    def require_existing_archive(self, source: Path, archive_path: Path) -> None:
+        if not archive_path.is_file():
+            display = self.archive_display_path(source, archive_path)
+            raise RuntimeError(f"Comic archive does not exist: {display}")
+
+    def confirmed_flags(self, source: Path, archive_path: Path) -> tuple[bool, bool, bool]:
+        self.require_existing_archive(source, archive_path)
+        has_info, has_comicinfo, info_says_english, error = read_archive_flags(archive_path)
+        if error:
+            display = self.archive_display_path(source, archive_path)
+            raise RuntimeError(f"Could not confirm archive status for {display}: {error}")
+        return has_info, has_comicinfo, archive_english_status(archive_path, info_says_english)
+
+    def ensure_cbz_archive(self, source: Path, archive_path: Path) -> Path:
+        self.require_existing_archive(source, archive_path)
+        if archive_path.suffix.lower() == ".cbz":
+            self.append_log_from_worker(f"Confirmed CBZ: {self.archive_display_path(source, archive_path)}")
+            return archive_path
+        if archive_path.suffix.lower() != ".zip":
+            display = self.archive_display_path(source, archive_path)
+            raise RuntimeError(f"Archive is not a ZIP or CBZ file: {display}")
+
+        script = repo_root() / "ZiptoCBZ" / "zip_to_cbz.py"
+        display = self.archive_display_path(source, archive_path)
+        self.append_log_from_worker(f"Prerequisite Zip to CBZ: {display}")
+        result = run_captured_command([sys.executable, str(script), str(archive_path)])
+        output = (result.stdout + result.stderr).strip()
+        self.append_log_from_worker(output or f"Processed {display}")
+        if result.returncode != 0:
+            raise RuntimeError(f"ZiptoCBZ failed for {display}:\n{output}")
+
+        cbz_path = archive_path.with_suffix(".cbz")
+        if cbz_path.is_file():
+            self.append_log_from_worker(f"Confirmed CBZ: {self.archive_display_path(source, cbz_path)}")
+            return cbz_path
+        raise RuntimeError(f"Zip to CBZ finished, but no CBZ archive was found for {display}.")
+
+    def require_info_archive(self, source: Path, archive_path: Path, step_name: str) -> None:
+        has_info, _has_comicinfo, _english = self.confirmed_flags(source, archive_path)
+        display = self.archive_display_path(source, archive_path)
+        if not has_info:
+            raise SkipArchive(f"Skipped missing info.txt for {step_name}: {display}")
+        self.append_log_from_worker(f"Confirmed info.txt: {display}")
+
+    def translate_archive_path(
+        self,
+        source: Path,
+        archive_path: Path,
+        cli_dir: Path,
+        include_cg_galleries: bool,
+        super_saver_mode: bool,
+        paddle_ocr_cuda_enabled: bool,
+    ) -> Path:
+        display = self.archive_display_path(source, archive_path)
+        if is_translated_archive_name(archive_path.name):
+            self.append_log_from_worker(f"Confirmed English: {display}")
+            return archive_path
+        if not include_cg_galleries and is_artist_or_game_cg_archive(archive_path):
+            raise SkipArchive(f"Skipped Artist/Game CG: {display}")
+
+        output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
+        output_before = file_signature(output_path)
+        self.append_log_from_worker(f"Translate: {display}")
+
+        def on_translate_line(line: str) -> None:
+            self.append_log_from_worker(line)
+            progress = translate_image_progress_from_line(line)
+            if progress is None:
+                return
+            image_index, image_total, completed = progress
+            progress_value = image_index if completed else image_index - 1
+            self.set_progress_from_worker(progress_value, image_total, f"({image_index}/{image_total})")
+
+        self.set_progress_from_worker(0, 1, "")
+        command = translate_command(archive_path, output_path, super_saver_mode, paddle_ocr_cuda_enabled)
+        result = run_streaming_command(command, cwd=cli_dir, on_line=on_translate_line)
+        output = (result.stdout + result.stderr).strip()
+        if not output:
+            self.append_log_from_worker(f"Processed {display}")
+        if result.returncode != 0:
+            self.append_log_from_worker(f"TranslateEXGallery failed for {display}")
+            raise RuntimeError(f"TranslateEXGallery failed for {display}:\n{output}")
+
+        output_after = file_signature(output_path)
+        if output_after is not None and output_after != output_before and archive_path.is_file():
+            moved_path = move_source_archive_to_translated_folder(archive_path)
+            self.append_log_from_worker(f"Moved original to {self.archive_display_path(source, moved_path)}")
+
+        translated_path = output_path if output_path.is_file() else archive_path
+        _has_info, _has_comicinfo, english = self.confirmed_flags(source, translated_path)
+        if not english:
+            translated_display = self.archive_display_path(source, translated_path)
+            raise RuntimeError(f"Translate finished, but English was not confirmed for {translated_display}.")
+        self.append_log_from_worker(f"Confirmed English: {self.archive_display_path(source, translated_path)}")
+        return translated_path
+
+    def ensure_english_archive(
+        self,
+        source: Path,
+        archive_path: Path,
+        cli_dir: Path,
+        include_cg_galleries: bool,
+        super_saver_mode: bool,
+        paddle_ocr_cuda_enabled: bool,
+    ) -> Path:
+        self.require_info_archive(source, archive_path, "Translate")
+        _has_info, _has_comicinfo, english = self.confirmed_flags(source, archive_path)
+        if english:
+            self.append_log_from_worker(f"Confirmed English: {self.archive_display_path(source, archive_path)}")
+            return archive_path
+        return self.translate_archive_path(
+            source,
+            archive_path,
+            cli_dir,
+            include_cg_galleries,
+            super_saver_mode,
+            paddle_ocr_cuda_enabled,
+        )
+
+    def ensure_comicinfo_archive(self, source: Path, archive_path: Path) -> Path:
+        self.require_info_archive(source, archive_path, "Info -> ComicInfo.xml")
+        _has_info, has_comicinfo, _english = self.confirmed_flags(source, archive_path)
+        display = self.archive_display_path(source, archive_path)
+        if has_comicinfo:
+            self.append_log_from_worker(f"Confirmed ComicInfo.xml: {display}")
+            return archive_path
+
+        script = repo_root() / "InfotoComicInfoxml" / "ComicInfoConverter.py"
+        self.append_log_from_worker(f"Info -> ComicInfo.xml: {display}")
+        result = run_captured_command([sys.executable, str(script), str(archive_path)])
+        output = (result.stdout + result.stderr).strip()
+        self.append_log_from_worker(output or f"Processed {display}")
+        if result.returncode != 0:
+            raise RuntimeError(f"Info -> ComicInfo.xml failed for {display}:\n{output}")
+
+        _has_info, has_comicinfo, _english = self.confirmed_flags(source, archive_path)
+        if not has_comicinfo:
+            raise RuntimeError(f"Info -> ComicInfo.xml finished, but ComicInfo.xml was not confirmed for {display}.")
+        self.append_log_from_worker(f"Confirmed ComicInfo.xml: {display}")
+        return archive_path
+
+    def prepare_archive_for_translate(
+        self,
+        source: Path,
+        record: ArchiveRecord,
+        cli_dir: Path,
+        include_cg_galleries: bool,
+        super_saver_mode: bool,
+        paddle_ocr_cuda_enabled: bool,
+    ) -> Path:
+        archive_path = self.selected_archive_path(source, record)
+        archive_path = self.ensure_cbz_archive(source, archive_path)
+        return self.ensure_english_archive(
+            source,
+            archive_path,
+            cli_dir,
+            include_cg_galleries,
+            super_saver_mode,
+            paddle_ocr_cuda_enabled,
+        )
+
+    def prepare_archive_for_comicinfo(
+        self,
+        source: Path,
+        record: ArchiveRecord,
+        cli_dir: Path,
+        include_cg_galleries: bool,
+        super_saver_mode: bool,
+        paddle_ocr_cuda_enabled: bool,
+    ) -> Path:
+        archive_path = self.prepare_archive_for_translate(
+            source,
+            record,
+            cli_dir,
+            include_cg_galleries,
+            super_saver_mode,
+            paddle_ocr_cuda_enabled,
+        )
+        return self.ensure_comicinfo_archive(source, archive_path)
+
+    def prepare_archive_for_sync(
+        self,
+        source: Path,
+        record: ArchiveRecord,
+        cli_dir: Path,
+        include_cg_galleries: bool,
+        super_saver_mode: bool,
+        paddle_ocr_cuda_enabled: bool,
+    ) -> Path:
+        return self.prepare_archive_for_comicinfo(
+            source,
+            record,
+            cli_dir,
+            include_cg_galleries,
+            super_saver_mode,
+            paddle_ocr_cuda_enabled,
+        )
+
     def convert_zip_to_cbz(self) -> None:
         source = self.require_source()
         if source is None:
             return
-        script = repo_root() / "ZiptoCBZ" / "zip_to_cbz.py"
         targets = [record for record in self.selected_records() if not record.cbz]
         if not targets:
             messagebox.showinfo("ComicRack Library Master", "Select at least one ZIP archive.")
@@ -630,18 +903,9 @@ class ComicRackMasterUI(tk.Tk):
 
         def action() -> list[str]:
             total = len(targets)
-            failures = []
             for index, record in enumerate(targets, start=1):
-                archive_path = source / record.relative_path
                 self.append_log_from_worker(f"Zip to CBZ [{index}/{total}]: {record.relative_path}")
-                result = run_captured_command([sys.executable, str(script), str(archive_path)])
-                output = (result.stdout + result.stderr).strip()
-                self.append_log_from_worker(output or f"Processed {record.relative_path}")
-                if result.returncode != 0:
-                    failures.append(record.relative_path)
-                    self.append_log_from_worker(f"ZiptoCBZ failed for {record.relative_path}")
-            if failures:
-                raise RuntimeError(f"ZiptoCBZ failed for {len(failures)} archive(s). Check the Run Log for details.")
+                self.ensure_cbz_archive(source, self.selected_archive_path(source, record))
             return []
 
         self.run_in_worker("Running Zip to CBZ...", action, done_message="Zip to CBZ finished", rescan_after=True)
@@ -650,22 +914,33 @@ class ComicRackMasterUI(tk.Tk):
         source = self.require_source()
         if source is None:
             return
-        script = repo_root() / "InfotoComicInfoxml" / "ComicInfoConverter.py"
-        targets = [record for record in self.selected_records() if record.cbz]
+        cli_dir = repo_root() / "TranslateEXGallery"
+        targets = self.selected_records()
         if not targets:
-            messagebox.showinfo("ComicRack Library Master", "Select at least one CBZ archive.")
+            messagebox.showinfo("ComicRack Library Master", "Select at least one archive.")
             return
+        include_cg_galleries = self.translate_cg_var.get()
+        super_saver_mode = self.super_saver_var.get()
+        paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
 
         def action() -> list[str]:
-            messages = []
-            for record in targets:
-                archive_path = source / record.relative_path
-                result = run_captured_command([sys.executable, str(script), str(archive_path)])
-                output = (result.stdout + result.stderr).strip()
-                messages.append(output or f"Processed {record.relative_path}")
-                if result.returncode != 0:
-                    raise RuntimeError(f"Info -> ComicInfo.xml failed for {record.relative_path}:\n{output}")
-            return messages
+            total = len(targets)
+            skipped = 0
+            for index, record in enumerate(targets, start=1):
+                self.append_log_from_worker(f"Prepare ComicInfo [{index}/{total}]: {record.relative_path}")
+                try:
+                    self.prepare_archive_for_comicinfo(
+                        source,
+                        record,
+                        cli_dir,
+                        include_cg_galleries,
+                        super_saver_mode,
+                        paddle_ocr_cuda_enabled,
+                    )
+                except SkipArchive as exc:
+                    skipped += 1
+                    self.append_log_from_worker(str(exc))
+            return [f"Skipped {skipped} archive(s)."] if skipped else []
 
         self.run_in_worker(
             "Creating ComicInfo.xml...",
@@ -679,56 +954,32 @@ class ComicRackMasterUI(tk.Tk):
         if source is None:
             return
         cli_dir = repo_root() / "TranslateEXGallery"
-        targets = [record for record in self.selected_records() if not record.english]
+        targets = self.selected_records()
         if not targets:
-            messagebox.showinfo("ComicRack Library Master", "Select at least one non-English archive.")
+            messagebox.showinfo("ComicRack Library Master", "Select at least one archive.")
             return
         include_cg_galleries = self.translate_cg_var.get()
         super_saver_mode = self.super_saver_var.get()
+        paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
 
         def action() -> list[str]:
             total = len(targets)
+            skipped = 0
             for index, record in enumerate(targets, start=1):
-                archive_path = source / record.relative_path
-                if is_translated_archive_name(record.filename):
-                    self.append_log_from_worker(f"Skipped already translated [{index}/{total}]: {record.relative_path}")
-                    continue
-                if not include_cg_galleries and is_artist_or_game_cg_archive(archive_path):
-                    self.append_log_from_worker(f"Skipped Artist/Game CG [{index}/{total}]: {record.relative_path}")
-                    continue
-                output_path = archive_path.with_name(f"{archive_path.stem}-translatedENG{archive_path.suffix}")
-                output_before = file_signature(output_path)
-                self.append_log_from_worker(f"Translate [{index}/{total}]: {record.relative_path}")
-
-                def on_translate_line(line: str) -> None:
-                    self.append_log_from_worker(line)
-                    progress = translate_image_progress_from_line(line)
-                    if progress is None:
-                        return
-                    image_index, image_total, completed = progress
-                    progress_value = image_index if completed else image_index - 1
-                    self.set_progress_from_worker(progress_value, image_total, f"({image_index}/{image_total})")
-
-                self.set_progress_from_worker(0, 1, "")
-                command = ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)]
-                if super_saver_mode:
-                    command.append("--super-saver")
-                result = run_streaming_command(command, cwd=cli_dir, on_line=on_translate_line)
-                output = (result.stdout + result.stderr).strip()
-                if not output:
-                    self.append_log_from_worker(f"Processed {record.relative_path}")
-                if result.returncode != 0:
-                    self.append_log_from_worker(f"TranslateEXGallery failed for {record.relative_path}")
-                    raise RuntimeError(f"TranslateEXGallery failed for {record.relative_path}:\n{output}")
-                output_after = file_signature(output_path)
-                if output_after is not None and output_after != output_before and archive_path.is_file():
-                    moved_path = move_source_archive_to_translated_folder(archive_path)
-                    try:
-                        moved_display = moved_path.relative_to(source).as_posix()
-                    except ValueError:
-                        moved_display = str(moved_path)
-                    self.append_log_from_worker(f"Moved original to {moved_display}")
-            return []
+                self.append_log_from_worker(f"Prepare Translate [{index}/{total}]: {record.relative_path}")
+                try:
+                    self.prepare_archive_for_translate(
+                        source,
+                        record,
+                        cli_dir,
+                        include_cg_galleries,
+                        super_saver_mode,
+                        paddle_ocr_cuda_enabled,
+                    )
+                except SkipArchive as exc:
+                    skipped += 1
+                    self.append_log_from_worker(str(exc))
+            return [f"Skipped {skipped} archive(s)."] if skipped else []
 
         self.run_in_worker("Translating selected archives...", action, done_message="Translate selected finished", rescan_after=True)
 
@@ -740,9 +991,39 @@ class ComicRackMasterUI(tk.Tk):
         if not remote_sync_target:
             messagebox.showinfo("ComicRack Library Master", "Set Remote Sync Target before syncing.")
             return
+        targets = self.selected_records()
+        if not targets:
+            messagebox.showinfo("ComicRack Library Master", "Select at least one archive.")
+            return
+        cli_dir = repo_root() / "TranslateEXGallery"
+        include_cg_galleries = self.translate_cg_var.get()
+        super_saver_mode = self.super_saver_var.get()
+        paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
 
         def action() -> list[str]:
-            return sync_selected_archives(self.records, source, remote_sync_target)
+            total = len(targets)
+            prepared_records: list[ArchiveRecord] = []
+            skipped = 0
+            for index, record in enumerate(targets, start=1):
+                self.append_log_from_worker(f"Prepare Sync [{index}/{total}]: {record.relative_path}")
+                try:
+                    archive_path = self.prepare_archive_for_sync(
+                        source,
+                        record,
+                        cli_dir,
+                        include_cg_galleries,
+                        super_saver_mode,
+                        paddle_ocr_cuda_enabled,
+                    )
+                except SkipArchive as exc:
+                    skipped += 1
+                    self.append_log_from_worker(str(exc))
+                    continue
+                prepared_records.append(archive_record_from_path(source, archive_path))
+            messages = sync_selected_archives(prepared_records, source, remote_sync_target)
+            if skipped:
+                messages.append(f"Skipped {skipped} archive(s).")
+            return messages
 
         self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
 
@@ -824,8 +1105,12 @@ class ComicRackMasterUI(tk.Tk):
             "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
+            "Workflow columns are ordered as CBZ, Info, ENGLISH, ComicInfo, and Synced. "
+            "When a later UI tool is run, the UI first confirms the preceding columns and runs missing prerequisite steps when it can. "
+            "Archives without info.txt are skipped for Translate, ComicInfo, or Sync, and the rest of the selected batch continues.\n\n"
             "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
             "Super-Saver mode is off by default. When enabled, Translate uses PaddleOCR text detection to skip pages where no text boxes are found.\n\n"
+            "CUDA OCR only applies when Super-Saver mode is enabled, and requires PaddleOCR to run under a compatible paddlepaddle-gpu install.\n\n"
             "During translation, the bottom progress bar shows the current image count for the active archive.\n\n"
             "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
             "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
