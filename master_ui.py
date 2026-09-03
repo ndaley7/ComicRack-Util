@@ -205,6 +205,13 @@ def translate_command(
     return command
 
 
+def selected_records_for_run(records: list[ArchiveRecord]) -> list[ArchiveRecord]:
+    return sorted(
+        (record for record in records if record.selected),
+        key=lambda record: (record.size, record.relative_path.lower()),
+    )
+
+
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str) -> None:
         self.widget = widget
@@ -645,7 +652,7 @@ class ComicRackMasterUI(tk.Tk):
         self.save_current_settings()
 
     def selected_records(self) -> list[ArchiveRecord]:
-        return [record for record in self.records if record.selected]
+        return selected_records_for_run(self.records)
 
     def open_tree_comic(self, event: tk.Event) -> str:
         row_id = self.tree.identify_row(event.y)
@@ -1105,6 +1112,7 @@ class ComicRackMasterUI(tk.Tk):
             "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
+            "Selected archives are processed from smallest to largest, regardless of the current table sort.\n\n"
             "Workflow columns are ordered as CBZ, Info, ENGLISH, ComicInfo, and Synced. "
             "When a later UI tool is run, the UI first confirms the preceding columns and runs missing prerequisite steps when it can. "
             "Archives without info.txt are skipped for Translate, ComicInfo, or Sync, and the rest of the selected batch continues.\n\n"

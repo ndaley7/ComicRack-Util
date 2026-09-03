@@ -14,10 +14,12 @@ from master_ui import (
     resolve_command_executable,
     run_captured_command,
     run_streaming_command,
+    selected_records_for_run,
     subprocess_environment,
     translate_command,
     translate_image_progress_from_line,
 )
+from comicrack_master import ArchiveRecord
 
 
 def write_archive(path: Path, entries: dict[str, str]) -> None:
@@ -56,6 +58,22 @@ class MasterUiHelperTests(unittest.TestCase):
                 ui.require_info_archive(source, archive_path, "Translate")
 
             ui.append_log_from_worker.assert_not_called()
+
+    def test_selected_records_for_run_orders_selected_entries_by_size(self) -> None:
+        records = [
+            ArchiveRecord("Large.cbz", "Large.cbz", True, True, True, False, False, False, 300, 0),
+            ArchiveRecord("Unselected.cbz", "Unselected.cbz", False, True, True, False, False, False, 1, 0),
+            ArchiveRecord("TieB.cbz", "TieB.cbz", True, True, True, False, False, False, 100, 0),
+            ArchiveRecord("Small.cbz", "Small.cbz", True, True, True, False, False, False, 20, 0),
+            ArchiveRecord("TieA.cbz", "TieA.cbz", True, True, True, False, False, False, 100, 0),
+        ]
+
+        ordered = selected_records_for_run(records)
+
+        self.assertEqual(
+            [record.relative_path for record in ordered],
+            ["Small.cbz", "TieA.cbz", "TieB.cbz", "Large.cbz"],
+        )
 
     def test_translate_command_adds_cuda_flag_only_with_super_saver(self) -> None:
         archive_path = Path("C:/Comics/Sample.cbz")

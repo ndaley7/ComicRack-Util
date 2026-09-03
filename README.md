@@ -19,7 +19,7 @@ Use **Rescan** to force-refresh status for ZIP and CBZ files directly inside
 the source folder. Subdirectories are ignored. ZIP files are listed first, and
 newly discovered CBZ files are selected by default. Scans and utility actions
 run in the background, with the bottom progress bar showing when work is in
-progress. Click any table column heading to sort by that column; clicking the
+progress. Selected archives are processed from smallest to largest. Click any table column heading to sort by that column; clicking the
 same heading again reverses the sort. Drag table heading borders to resize
 columns; those widths persist between runs. Use the bottom **Comic List** button
 to open a copyable plain-text list of the currently loaded comics.
