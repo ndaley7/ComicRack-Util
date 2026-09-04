@@ -59,6 +59,26 @@ class MasterUiHelperTests(unittest.TestCase):
 
             ui.append_log_from_worker.assert_not_called()
 
+    def test_ensure_english_archive_logs_already_english_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            archive_path = source / "AlreadyEnglish.cbz"
+            write_archive(archive_path, {"info.txt": "Language: English\n"})
+            ui = object.__new__(ComicRackMasterUI)
+            ui.append_log_from_worker = mock.Mock()
+
+            result = ui.ensure_english_archive(
+                source,
+                archive_path,
+                Path("TranslateEXGallery"),
+                include_cg_galleries=False,
+                super_saver_mode=False,
+                paddle_ocr_cuda_enabled=False,
+            )
+
+            self.assertEqual(result, archive_path)
+            ui.append_log_from_worker.assert_any_call("Skipped translation because ENGLISH is already Yes: AlreadyEnglish.cbz")
+
     def test_selected_records_for_run_orders_selected_entries_by_size(self) -> None:
         records = [
             ArchiveRecord("Large.cbz", "Large.cbz", True, True, True, False, False, False, 300, 0),
@@ -82,9 +102,8 @@ class MasterUiHelperTests(unittest.TestCase):
         self.assertEqual(
             translate_command(archive_path, output_path, super_saver_mode=True, paddle_ocr_cuda_enabled=True),
             [
-                "npm",
-                "start",
-                "--",
+                "node",
+                "src/cli.js",
                 "--zip",
                 str(archive_path),
                 "--out",
@@ -97,6 +116,15 @@ class MasterUiHelperTests(unittest.TestCase):
             "--paddle-ocr-cuda",
             translate_command(archive_path, output_path, super_saver_mode=False, paddle_ocr_cuda_enabled=True),
         )
+
+    def test_translate_command_keeps_special_characters_inside_path_arguments(self) -> None:
+        archive_path = Path("F:/Ex-H/[rbqinori] Sample [Chinese&Textless].cbz")
+        output_path = Path("F:/Ex-H/[rbqinori] Sample [Chinese&Textless]-translatedENG.cbz")
+
+        command = translate_command(archive_path, output_path, super_saver_mode=False, paddle_ocr_cuda_enabled=False)
+
+        self.assertEqual(command[0:2], ["node", "src/cli.js"])
+        self.assertIn(str(archive_path), command)
 
     def test_subprocess_environment_forces_safe_python_output_encoding(self) -> None:
         env = subprocess_environment()

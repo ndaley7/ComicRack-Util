@@ -87,6 +87,8 @@ By default, Translate skips archives whose `info.txt` contains
 the Translate button to include those galleries.
 Archives whose `info.txt` contains `Category: Western` are treated as already
 translated and show **Yes** in the ENGLISH column.
+The master UI launches TranslateEXGallery through `node src/cli.js` directly so
+archive filenames containing shell metacharacters such as `&` are passed safely.
 **Super-Saver mode** is unchecked by default. When checked, Translate uses
 PaddleOCR text detection before each uncached page upload and skips pages where
 no text boxes are found.

@@ -197,7 +197,7 @@ def translate_command(
     super_saver_mode: bool,
     paddle_ocr_cuda_enabled: bool,
 ) -> list[str]:
-    command = ["npm", "start", "--", "--zip", str(archive_path), "--out", str(output_path)]
+    command = ["node", "src/cli.js", "--zip", str(archive_path), "--out", str(output_path)]
     if super_saver_mode:
         command.append("--super-saver")
         if paddle_ocr_cuda_enabled:
@@ -756,7 +756,7 @@ class ComicRackMasterUI(tk.Tk):
     ) -> Path:
         display = self.archive_display_path(source, archive_path)
         if is_translated_archive_name(archive_path.name):
-            self.append_log_from_worker(f"Confirmed English: {display}")
+            self.append_log_from_worker(f"Skipped translation because ENGLISH is already Yes: {display}")
             return archive_path
         if not include_cg_galleries and is_artist_or_game_cg_archive(archive_path):
             raise SkipArchive(f"Skipped Artist/Game CG: {display}")
@@ -809,7 +809,9 @@ class ComicRackMasterUI(tk.Tk):
         self.require_info_archive(source, archive_path, "Translate")
         _has_info, _has_comicinfo, english = self.confirmed_flags(source, archive_path)
         if english:
-            self.append_log_from_worker(f"Confirmed English: {self.archive_display_path(source, archive_path)}")
+            self.append_log_from_worker(
+                f"Skipped translation because ENGLISH is already Yes: {self.archive_display_path(source, archive_path)}"
+            )
             return archive_path
         return self.translate_archive_path(
             source,
@@ -825,7 +827,7 @@ class ComicRackMasterUI(tk.Tk):
         _has_info, has_comicinfo, _english = self.confirmed_flags(source, archive_path)
         display = self.archive_display_path(source, archive_path)
         if has_comicinfo:
-            self.append_log_from_worker(f"Confirmed ComicInfo.xml: {display}")
+            self.append_log_from_worker(f"Skipped ComicInfo because ComicInfo is already Yes: {display}")
             return archive_path
 
         script = repo_root() / "InfotoComicInfoxml" / "ComicInfoConverter.py"
@@ -910,6 +912,8 @@ class ComicRackMasterUI(tk.Tk):
 
         def action() -> list[str]:
             total = len(targets)
+            if total > 1:
+                self.append_log_from_worker(f"Queued {total} ZIP archive(s) smallest to largest.")
             for index, record in enumerate(targets, start=1):
                 self.append_log_from_worker(f"Zip to CBZ [{index}/{total}]: {record.relative_path}")
                 self.ensure_cbz_archive(source, self.selected_archive_path(source, record))
@@ -933,6 +937,8 @@ class ComicRackMasterUI(tk.Tk):
         def action() -> list[str]:
             total = len(targets)
             skipped = 0
+            if total > 1:
+                self.append_log_from_worker(f"Queued {total} selected archive(s) smallest to largest.")
             for index, record in enumerate(targets, start=1):
                 self.append_log_from_worker(f"Prepare ComicInfo [{index}/{total}]: {record.relative_path}")
                 try:
@@ -972,6 +978,8 @@ class ComicRackMasterUI(tk.Tk):
         def action() -> list[str]:
             total = len(targets)
             skipped = 0
+            if total > 1:
+                self.append_log_from_worker(f"Queued {total} selected archive(s) smallest to largest.")
             for index, record in enumerate(targets, start=1):
                 self.append_log_from_worker(f"Prepare Translate [{index}/{total}]: {record.relative_path}")
                 try:
@@ -1011,6 +1019,8 @@ class ComicRackMasterUI(tk.Tk):
             total = len(targets)
             prepared_records: list[ArchiveRecord] = []
             skipped = 0
+            if total > 1:
+                self.append_log_from_worker(f"Queued {total} selected archive(s) smallest to largest.")
             for index, record in enumerate(targets, start=1):
                 self.append_log_from_worker(f"Prepare Sync [{index}/{total}]: {record.relative_path}")
                 try:
