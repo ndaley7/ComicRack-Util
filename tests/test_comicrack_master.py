@@ -17,6 +17,7 @@ from comicrack_master import (
     save_source_state,
     scan_source_directory,
     sorted_archive_records,
+    sync_selected_archives,
 )
 
 
@@ -160,6 +161,24 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source)
 
             self.assertEqual(records_as_copy_list(records), "First.zip\nSecond.cbz")
+
+    def test_sync_copies_only_archives_with_root_comicinfo(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw, tempfile.TemporaryDirectory() as remote_raw:
+            source = Path(source_raw)
+            remote = Path(remote_raw)
+            write_archive(source / "Root.cbz", {"ComicInfo.xml": "<ComicInfo />", "page.jpg": "image"})
+            write_archive(source / "Nested.cbz", {"Gallery/ComicInfo.xml": "<ComicInfo />", "page.jpg": "image"})
+            write_archive(source / "Missing.cbz", {"page.jpg": "image"})
+            records = scan_source_directory(source)
+
+            messages = sync_selected_archives(records, source, str(remote))
+
+            self.assertIn("Copied Root.cbz", messages)
+            self.assertIn("Skipped Nested.cbz: root ComicInfo.xml not found", messages)
+            self.assertIn("Skipped Missing.cbz: root ComicInfo.xml not found", messages)
+            self.assertTrue((remote / "Root.cbz").is_file())
+            self.assertFalse((remote / "Nested.cbz").exists())
+            self.assertFalse((remote / "Missing.cbz").exists())
 
     def test_sorted_archive_records_sorts_by_clicked_columns(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:

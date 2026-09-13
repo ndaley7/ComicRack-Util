@@ -27,10 +27,10 @@ to open a copyable plain-text list of the currently loaded comics.
 The workflow columns are ordered as **CBZ**, **Info**, **ENGLISH**,
 **ComicInfo**, and **Synced**. When you run a later workflow tool from the UI,
 the UI confirms the preceding columns first and runs missing prerequisite steps
-when it can. For example, **Translate** first confirms CBZ and `info.txt`, and
-**Sync Selected** brings selected archives through CBZ, Info, English, and
-ComicInfo before copying. If `info.txt` is missing, that archive is skipped for
-Translate, ComicInfo, or Sync, and the rest of the selected batch continues.
+when it can. For example, **Translate** first confirms CBZ and `info.txt`.
+**Sync Selected** only copies selected archives that already contain
+`ComicInfo.xml` at the archive root; selected archives without that root entry
+are skipped, and the rest of the selected batch continues.
 
 ## ComicRack Gallery Tag Panel
 
@@ -135,7 +135,7 @@ Run it directly against a `.cbz` archive:
 python .\InfotoComicInfoxml\ComicInfoConverter.py "C:\path\to\comic.cbz"
 ```
 
-For `.cbz` input, the converter only uses `info.txt` when it is present at the archive root. If root `info.txt` is missing, the archive is skipped. If root `ComicInfo.xml` already exists, the archive is skipped unless `--force` is passed:
+For `.cbz` input, the converter uses the first `info.txt` found in the archive, preferring one at the archive root. If `info.txt` is missing, the archive is skipped. If `ComicInfo.xml` already exists, the archive is skipped unless `--force` is passed:
 
 ```powershell
 python .\InfotoComicInfoxml\ComicInfoConverter.py "C:\path\to\comic.cbz" --force

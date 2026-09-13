@@ -652,8 +652,24 @@ def find_root_archive_file(names: List[str], expected_name: str) -> str:
     return ''
 
 
+def archive_basename(name: str) -> str:
+    return Path(normalized_archive_name(name)).name.lower()
+
+
+def find_archive_file(names: List[str], expected_name: str) -> str:
+    root_match = find_root_archive_file(names, expected_name)
+    if root_match:
+        return root_match
+
+    expected = expected_name.lower()
+    for name in names:
+        if archive_basename(name) == expected:
+            return name
+    return ''
+
+
 def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
-    """Add ComicInfo.xml to a CBZ when root info.txt is present."""
+    """Add ComicInfo.xml to a CBZ when info.txt is present."""
     if not cbz_path.is_file():
         raise FileNotFoundError(f'Input file does not exist: {cbz_path}')
     if cbz_path.suffix.lower() != '.cbz':
@@ -661,13 +677,13 @@ def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
 
     with zipfile.ZipFile(cbz_path, 'r') as source:
         names = source.namelist()
-        info_entry = find_root_archive_file(names, 'info.txt')
-        comicinfo_entry = find_root_archive_file(names, 'ComicInfo.xml')
+        info_entry = find_archive_file(names, 'info.txt')
+        comicinfo_entry = find_archive_file(names, 'ComicInfo.xml')
 
         if not info_entry:
-            return f'Skipped {cbz_path}: root info.txt not found.'
+            return f'Skipped {cbz_path}: info.txt not found.'
         if comicinfo_entry and not force:
-            return f'Skipped {cbz_path}: root ComicInfo.xml already exists. Use --force to replace it.'
+            return f'Skipped {cbz_path}: ComicInfo.xml already exists. Use --force to replace it.'
 
         content = source.read(info_entry).decode('utf-8-sig')
         meta = parse_info_content(content)
@@ -685,7 +701,7 @@ def convert_cbz_file(cbz_path: Path, force: bool = False) -> str:
         with zipfile.ZipFile(cbz_path, 'r') as source:
             with zipfile.ZipFile(temp_path, 'w') as destination:
                 for item in source.infolist():
-                    if is_root_archive_file(item.filename, 'ComicInfo.xml'):
+                    if archive_basename(item.filename) == 'comicinfo.xml':
                         continue
                     destination.writestr(item, source.read(item.filename))
                 destination.writestr('ComicInfo.xml', xml)
@@ -723,9 +739,9 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
             '  python ComicInfoConverter.py gallery.cbz --force\n'
             '  python ComicInfoConverter.py "D:\\Comics\\Incoming" --recursive --force\n\n'
             'CBZ behavior:\n'
-            '  Only a root-level info.txt is used.\n'
-            '  Archives without root info.txt are skipped.\n'
-            '  Existing root ComicInfo.xml entries are skipped unless --force is passed.'
+            '  The first info.txt is used, preferring a root-level entry.\n'
+            '  Archives without info.txt are skipped.\n'
+            '  Existing ComicInfo.xml entries are skipped unless --force is passed.'
         ),
     )
     parser.add_argument(

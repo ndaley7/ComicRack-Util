@@ -345,7 +345,7 @@ class ComicRackMasterUI(tk.Tk):
         )
         self.action_buttons.append(paddle_ocr_cuda_check)
         self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 8, "Confirm CBZ, info.txt, and English first, then add ComicInfo.xml.")
-        self._add_button(toolbar, "Sync Selected", self.sync_selected, 9, "Copy selected archives to the Remote Sync Target folder.")
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 9, "Copy selected archives with root ComicInfo.xml to the Remote Sync Target folder.")
         self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 10, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
         self._add_button(toolbar, "Help", self.show_help, 11, "Show a quick guide for this master UI.")
 
@@ -1010,37 +1010,12 @@ class ComicRackMasterUI(tk.Tk):
         if not targets:
             messagebox.showinfo("ComicRack Library Master", "Select at least one archive.")
             return
-        cli_dir = repo_root() / "TranslateEXGallery"
-        include_cg_galleries = self.translate_cg_var.get()
-        super_saver_mode = self.super_saver_var.get()
-        paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
 
         def action() -> list[str]:
             total = len(targets)
-            prepared_records: list[ArchiveRecord] = []
-            skipped = 0
             if total > 1:
                 self.append_log_from_worker(f"Queued {total} selected archive(s) smallest to largest.")
-            for index, record in enumerate(targets, start=1):
-                self.append_log_from_worker(f"Prepare Sync [{index}/{total}]: {record.relative_path}")
-                try:
-                    archive_path = self.prepare_archive_for_sync(
-                        source,
-                        record,
-                        cli_dir,
-                        include_cg_galleries,
-                        super_saver_mode,
-                        paddle_ocr_cuda_enabled,
-                    )
-                except SkipArchive as exc:
-                    skipped += 1
-                    self.append_log_from_worker(str(exc))
-                    continue
-                prepared_records.append(archive_record_from_path(source, archive_path))
-            messages = sync_selected_archives(prepared_records, source, remote_sync_target)
-            if skipped:
-                messages.append(f"Skipped {skipped} archive(s).")
-            return messages
+            return sync_selected_archives(targets, source, remote_sync_target)
 
         self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
 
@@ -1125,7 +1100,7 @@ class ComicRackMasterUI(tk.Tk):
             "Selected archives are processed from smallest to largest, regardless of the current table sort.\n\n"
             "Workflow columns are ordered as CBZ, Info, ENGLISH, ComicInfo, and Synced. "
             "When a later UI tool is run, the UI first confirms the preceding columns and runs missing prerequisite steps when it can. "
-            "Archives without info.txt are skipped for Translate, ComicInfo, or Sync, and the rest of the selected batch continues.\n\n"
+            "Sync only copies selected archives that already contain ComicInfo.xml at the archive root; the rest of the selected batch continues.\n\n"
             "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
             "Super-Saver mode is off by default. When enabled, Translate uses PaddleOCR text detection to skip pages where no text boxes are found.\n\n"
             "CUDA OCR only applies when Super-Saver mode is enabled, and requires PaddleOCR to run under a compatible paddlepaddle-gpu install.\n\n"

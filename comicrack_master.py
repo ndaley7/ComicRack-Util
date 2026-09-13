@@ -151,6 +151,21 @@ def archive_basename(name: str) -> str:
     return Path(normalized_archive_name(name)).name.lower()
 
 
+def is_root_archive_file(name: str, expected_name: str) -> bool:
+    normalized = normalized_archive_name(name)
+    return "/" not in normalized and normalized.lower() == expected_name.lower()
+
+
+def archive_has_root_comicinfo(archive_path: Path) -> tuple[bool, str]:
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            return any(is_root_archive_file(name, "ComicInfo.xml") for name in archive.namelist()), ""
+    except zipfile.BadZipFile:
+        return False, "Invalid ZIP/CBZ archive."
+    except OSError as exc:
+        return False, str(exc)
+
+
 def is_translated_archive_name(name: str) -> bool:
     return Path(name).stem.casefold().endswith(TRANSLATED_ENG_SUFFIX)
 
@@ -358,6 +373,14 @@ def sync_selected_archives(records: list[ArchiveRecord], source_dir: Path, remot
         if not record.selected:
             continue
         source_file = source_dir / record.relative_path
+        has_root_comicinfo, error = archive_has_root_comicinfo(source_file)
+        if error:
+            messages.append(f"Skipped {record.relative_path}: could not check root ComicInfo.xml ({error})")
+            continue
+        if not has_root_comicinfo:
+            messages.append(f"Skipped {record.relative_path}: root ComicInfo.xml not found")
+            continue
+
         destination = remote_dir / record.relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_file, destination)

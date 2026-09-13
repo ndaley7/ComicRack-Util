@@ -82,6 +82,37 @@ class ComicInfoConverterTests(unittest.TestCase):
             self.assertIn("Added ComicInfo.xml", result)
             self.assertEqual(tag_bank, {"artist": ["example artist"]})
 
+    def test_convert_cbz_file_uses_nested_info_txt(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            archive_path = source / "NestedInfo.cbz"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("Gallery/info.txt", sample_info("> female: sword\n"))
+                archive.writestr("Gallery/page.jpg", "image")
+
+            result = convert_cbz_file(archive_path)
+
+            self.assertIn("Added ComicInfo.xml", result)
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                self.assertIn("ComicInfo.xml", archive.namelist())
+
+    def test_convert_cbz_file_force_removes_nested_comicinfo(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            archive_path = source / "NestedComicInfo.cbz"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("info.txt", sample_info("> female: sword\n"))
+                archive.writestr("Gallery/ComicInfo.xml", "<ComicInfo />")
+                archive.writestr("Gallery/page.jpg", "image")
+
+            result = convert_cbz_file(archive_path, force=True)
+
+            self.assertIn("Replaced ComicInfo.xml", result)
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                names = archive.namelist()
+            self.assertIn("ComicInfo.xml", names)
+            self.assertNotIn("Gallery/ComicInfo.xml", names)
+
 
 if __name__ == "__main__":
     unittest.main()
