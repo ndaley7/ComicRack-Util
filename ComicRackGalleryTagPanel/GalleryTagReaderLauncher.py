@@ -39,6 +39,7 @@ def GalleryTagReaderLauncher(book):
             [book],
             modal=False,
             replace_existing=True,
+            close_when_book_closes=True,
         )
     except Exception as error:
         debug_exception("GalleryTagReaderLauncher failed", error)

@@ -31,6 +31,7 @@ from System.Windows.Forms import (
     SplitContainer,
     TableLayoutPanel,
     TextBox,
+    Timer,
 )
 
 from gallery_tag_core import (
@@ -189,7 +190,7 @@ def close_open_panels():
 
 
 class GalleryTagPanelForm(Form):
-    def __init__(self, selected_books, library_books, library_note):
+    def __init__(self, selected_books, library_books, library_note, close_when_book_closes=False):
         Form.__init__(self)
         self.selected_books = list(selected_books or [])
         self.library_books = list(library_books or self.selected_books)
@@ -200,6 +201,9 @@ class GalleryTagPanelForm(Form):
         self.result_books = []
         self.tag_buttons = []
         self.updating_results = False
+        self.close_when_book_closes = close_when_book_closes
+        self.reader_book_seen_open = False
+        self.reader_watch = None
 
         self.Text = "Gallery Tag Panel"
         self.StartPosition = FormStartPosition.CenterScreen
@@ -209,6 +213,9 @@ class GalleryTagPanelForm(Form):
         self._build_ui()
         self._load_current_book()
         self.Shown += self._apply_initial_layout
+        if self.close_when_book_closes:
+            self.Shown += self._start_reader_watch
+            self.FormClosed += self._stop_reader_watch
 
     def _build_ui(self):
         self.split = SplitContainer()
@@ -357,6 +364,38 @@ class GalleryTagPanelForm(Form):
         maximum = self.split.Width - self.split.Panel2MinSize - self.split.SplitterWidth
         if maximum >= self.split.Panel1MinSize:
             self.split.SplitterDistance = min(target, maximum)
+
+    def _start_reader_watch(self, sender, event):
+        if self.reader_watch is not None:
+            return
+        self.reader_watch = Timer()
+        self.reader_watch.Interval = 500
+        self.reader_watch.Tick += self._check_reader_book
+        self.reader_watch.Start()
+
+    def _stop_reader_watch(self, sender, event):
+        if self.reader_watch is None:
+            return
+        try:
+            self.reader_watch.Stop()
+            self.reader_watch.Dispose()
+        except Exception:
+            pass
+        self.reader_watch = None
+
+    def _check_reader_book(self, sender, event):
+        host = get_comicrack()
+        if host is None or self.current_book is None:
+            return
+        try:
+            is_open = host.OpenBooks.IsOpen(self.current_book)
+        except Exception:
+            return
+
+        if is_open:
+            self.reader_book_seen_open = True
+        elif self.reader_book_seen_open:
+            self.Close()
 
     def _load_current_book(self):
         if self.current_book is None:
@@ -546,7 +585,12 @@ def GalleryTagPanel(books):
     show_gallery_tag_panel(books, modal=True)
 
 
-def show_gallery_tag_panel(books, modal=True, replace_existing=False):
+def show_gallery_tag_panel(
+    books,
+    modal=True,
+    replace_existing=False,
+    close_when_book_closes=False,
+):
     selected = list(books or [])
     if not selected:
         MessageBox.Show("Select at least one comic first.", "Gallery Tag Panel")
@@ -556,7 +600,12 @@ def show_gallery_tag_panel(books, modal=True, replace_existing=False):
         close_open_panels()
 
     library, library_note = get_library_books(selected)
-    form = GalleryTagPanelForm(selected, library, library_note)
+    form = GalleryTagPanelForm(
+        selected,
+        library,
+        library_note,
+        close_when_book_closes,
+    )
     host = get_comicrack()
     if modal:
         try:
