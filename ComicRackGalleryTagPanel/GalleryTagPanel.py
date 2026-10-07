@@ -31,7 +31,6 @@ from System.Windows.Forms import (
     SplitContainer,
     TableLayoutPanel,
     TextBox,
-    Timer,
 )
 
 from gallery_tag_core import (
@@ -202,8 +201,7 @@ class GalleryTagPanelForm(Form):
         self.tag_buttons = []
         self.updating_results = False
         self.close_when_book_closes = close_when_book_closes
-        self.reader_book_seen_open = False
-        self.reader_watch = None
+        self.reader_events_source = None
 
         self.Text = "Gallery Tag Panel"
         self.StartPosition = FormStartPosition.CenterScreen
@@ -214,8 +212,8 @@ class GalleryTagPanelForm(Form):
         self._load_current_book()
         self.Shown += self._apply_initial_layout
         if self.close_when_book_closes:
-            self.Shown += self._start_reader_watch
-            self.FormClosed += self._stop_reader_watch
+            self.Shown += self._subscribe_reader_close
+            self.FormClosed += self._unsubscribe_reader_close
 
     def _build_ui(self):
         self.split = SplitContainer()
@@ -365,36 +363,36 @@ class GalleryTagPanelForm(Form):
         if maximum >= self.split.Panel1MinSize:
             self.split.SplitterDistance = min(target, maximum)
 
-    def _start_reader_watch(self, sender, event):
-        if self.reader_watch is not None:
+    def _subscribe_reader_close(self, sender, event):
+        if self.reader_events_source is not None:
             return
-        self.reader_watch = Timer()
-        self.reader_watch.Interval = 500
-        self.reader_watch.Tick += self._check_reader_book
-        self.reader_watch.Start()
-
-    def _stop_reader_watch(self, sender, event):
-        if self.reader_watch is None:
+        host = get_comicrack()
+        if host is None:
             return
         try:
-            self.reader_watch.Stop()
-            self.reader_watch.Dispose()
+            source = host.OpenBooks
+            source.BookClosed += self._reader_book_closed
+            self.reader_events_source = source
         except Exception:
             pass
-        self.reader_watch = None
 
-    def _check_reader_book(self, sender, event):
-        host = get_comicrack()
-        if host is None or self.current_book is None:
+    def _unsubscribe_reader_close(self, sender, event):
+        if self.reader_events_source is None:
             return
         try:
-            is_open = host.OpenBooks.IsOpen(self.current_book)
+            self.reader_events_source.BookClosed -= self._reader_book_closed
+        except Exception:
+            pass
+        self.reader_events_source = None
+
+    def _reader_book_closed(self, sender, event):
+        try:
+            closed_book = event.Book
         except Exception:
             return
 
-        if is_open:
-            self.reader_book_seen_open = True
-        elif self.reader_book_seen_open:
+        if book_identity(closed_book) == book_identity(self.current_book):
+            self._unsubscribe_reader_close(None, None)
             self.Close()
 
     def _load_current_book(self):

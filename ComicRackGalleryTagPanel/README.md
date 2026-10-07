@@ -85,7 +85,8 @@ Manual install is also fine:
 `Gallery Tag Panel (Auto Open)` opens the full modeless panel whenever a comic
 is opened. Opening another comic replaces the existing panel, so no persistent
 launcher windows are required. The panel closes automatically when that reader
-comic is closed. Disable this action in ComicRack's Scripts preferences if you
+comic is closed by listening to ComicRack's `BookClosed` event; it does not use
+a polling timer. Disable this action in ComicRack's Scripts preferences if you
 prefer to open the panel manually.
 
 `Show Gallery Tag Panel` remains available as a manual Books action for the
