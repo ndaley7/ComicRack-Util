@@ -185,9 +185,11 @@ class GalleryTagPanelForm(Form):
         self.library_books = list(library_books or self.selected_books)
         self.library_note = library_note
         self.current_book = self.selected_books[0] if self.selected_books else None
+        self.preview_book = self.current_book
         self.filters = []
         self.result_books = []
         self.tag_buttons = []
+        self.updating_results = False
 
         self.Text = "Gallery Tag Panel"
         self.StartPosition = FormStartPosition.CenterScreen
@@ -335,6 +337,7 @@ class GalleryTagPanelForm(Form):
         self.results.Columns[2].FillWeight = 8
         self.results.Columns[3].FillWeight = 14
         self.results.Columns[4].FillWeight = 10
+        self.results.SelectionChanged += self._result_selection_changed
         self.results.CellDoubleClick += self._result_double_click
         results_area.Controls.Add(self.results, 0, 1)
 
@@ -351,14 +354,21 @@ class GalleryTagPanelForm(Form):
             self.meta_box.Text = ""
             return
 
-        self.title_label.Text = title_for_book(self.current_book)
-        self.meta_box.Text = "\r\n".join(["%s: %s" % row for row in metadata_rows(self.current_book)])
-        self.meta_box.SelectionLength = 0
-        self._load_cover()
+        self._show_book_details(self.current_book)
         self._render_tags()
         self._refresh_results()
 
-    def _load_cover(self):
+    def _show_book_details(self, book):
+        if book is None:
+            return
+
+        self.preview_book = book
+        self.title_label.Text = title_for_book(book)
+        self.meta_box.Text = "\r\n".join(["%s: %s" % row for row in metadata_rows(book)])
+        self.meta_box.SelectionLength = 0
+        self._load_cover(book)
+
+    def _load_cover(self, book):
         self.cover.Image = None
         self.cover_placeholder.Text = "Loading cover..."
         self.cover_placeholder.Visible = True
@@ -372,7 +382,7 @@ class GalleryTagPanelForm(Form):
         image = None
         for method_name in ["GetComicThumbnail", "GetComicPage"]:
             try:
-                image = getattr(host.App, method_name)(self.current_book, 0)
+                image = getattr(host.App, method_name)(book, 0)
                 if image is not None:
                     break
             except Exception:
@@ -440,11 +450,14 @@ class GalleryTagPanelForm(Form):
         self._refresh_results()
 
     def _refresh_results(self):
+        self.updating_results = True
         self.results.Rows.Clear()
         if not self.filters:
             self.filter_label.Text = self.library_note + ". Click tags to find matching comics; multiple tags use AND."
             self.result_summary.Text = "No filters selected"
             self.result_books = []
+            self.updating_results = False
+            self._show_book_details(self.current_book)
             return
 
         filter_text = " + ".join(["%s:%s" % (c, v) for c, v in self.filters])
@@ -473,10 +486,25 @@ class GalleryTagPanelForm(Form):
             )
             self.results.Rows[row_index].Tag = book
 
+        self.updating_results = False
+        if self.results.Rows.Count > 0:
+            self.results.CurrentCell = self.results.Rows[0].Cells[0]
+            self.results.Rows[0].Selected = True
+            self._show_book_details(self.results.Rows[0].Tag)
+        else:
+            self._show_book_details(self.current_book)
+
     def _selected_result_book(self):
         if self.results.SelectedRows.Count == 0:
             return None
         return self.results.SelectedRows[0].Tag
+
+    def _result_selection_changed(self, sender, event):
+        if self.updating_results:
+            return
+        book = self._selected_result_book()
+        if book is not None:
+            self._show_book_details(book)
 
     def _show_selected_result_info(self, sender, event):
         book = self._selected_result_book()
