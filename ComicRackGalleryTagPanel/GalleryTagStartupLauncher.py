@@ -2,7 +2,7 @@ from System import Environment
 from System.IO import Directory, File, Path
 
 
-def startup_log(message):
+def script_log(message):
     try:
         root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -16,51 +16,21 @@ def startup_log(message):
         pass
 
 
-startup_log("GalleryTagStartupLauncher module loading")
-
-
-#@Name Gallery Tags Startup Launcher
-#@Key GalleryTagStartupLauncher
-#@Hook Startup
-#@Enabled true
-#@Description Shows the floating Tags launcher when ComicRack starts.
-def GalleryTagStartupLauncher():
-    startup_log("Startup hook called")
-    try:
-        import GalleryTagReaderLauncher as reader_launcher
-
-        reader_launcher.set_comicrack(ComicRack)
-        launcher = reader_launcher.ensure_launcher()
-        launcher.wait_for_book()
-        try:
-            launcher.Activate()
-        except Exception:
-            pass
-        startup_log("Startup launcher shown")
-    except Exception as error:
-        startup_log("GalleryTagStartupLauncher failed\n" + unicode(error))
-
-
-#@Name Show Gallery Tags Launcher
+#@Name Show Gallery Tag Panel
 #@Key GalleryTagShowLauncher
 #@Hook Books
 #@Enabled true
-#@Description Shows the floating Tags launcher for the selected comic.
+#@Description Opens the Gallery Tag Panel for the selected comic.
 def GalleryTagShowLauncher(books):
-    startup_log("Manual launcher hook called")
+    script_log("Manual Gallery Tag Panel hook called")
     try:
-        import GalleryTagReaderLauncher as reader_launcher
+        import GalleryTagPanel as gallery_panel
 
-        reader_launcher.set_comicrack(ComicRack)
-        selected = list(books or [])
-        launcher = reader_launcher.ensure_launcher()
-        if selected:
-            launcher.set_book(selected[0])
-        else:
-            launcher.wait_for_book()
-        try:
-            launcher.Activate()
-        except Exception:
-            pass
+        gallery_panel.set_comicrack(ComicRack)
+        gallery_panel.show_gallery_tag_panel(
+            list(books or []),
+            modal=False,
+            replace_existing=True,
+        )
     except Exception as error:
-        startup_log("GalleryTagShowLauncher failed\n" + unicode(error))
+        script_log("GalleryTagShowLauncher failed\n" + unicode(error))

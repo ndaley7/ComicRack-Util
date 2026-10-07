@@ -39,8 +39,7 @@ Edition script framework for an E-H-style metadata panel. It shows the selected
 comic's cover, title, common ComicInfo metadata, grouped tag chips, and a
 matching-comics table. Click one tag to find other comics with that tag; click
 more tags to narrow the result set with AND matching. It also includes startup
-and `BookOpened` helpers that show a small floating `Tags` launcher while
-reading.
+and a `BookOpened` helper that opens the full Gallery Tag Panel while reading.
 
 Install it by copying the `ComicRackGalleryTagPanel` folder into:
 

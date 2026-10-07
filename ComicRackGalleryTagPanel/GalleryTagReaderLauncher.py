@@ -1,33 +1,7 @@
-import clr
-clr.AddReferenceByPartialName("System.Drawing")
-clr.AddReferenceByPartialName("System.Windows.Forms")
-
 from System import Environment
-from System.Drawing import Font, FontStyle, Size
 from System.IO import Directory, File, Path
-from System.Windows.Forms import (
-    Button,
-    DockStyle,
-    FlowLayoutPanel,
-    Form,
-    FormBorderStyle,
-    FormStartPosition,
-    Label,
-    Padding,
-)
 
 import GalleryTagPanel as gallery_panel
-from gallery_tag_core import title_for_book
-
-
-LAUNCHER = None
-COMICRACK_HOST = None
-
-
-def set_comicrack(host):
-    global COMICRACK_HOST
-    COMICRACK_HOST = host
-    gallery_panel.set_comicrack(host)
 
 
 def debug_log(message):
@@ -48,89 +22,11 @@ def debug_exception(context, error):
     debug_log(context + "\n" + unicode(error))
 
 
-class ReaderTagLauncher(Form):
-    def __init__(self):
-        Form.__init__(self)
-        self.current_book = None
-        self.Text = "Tags"
-        self.ShowInTaskbar = False
-        self.TopMost = True
-        self.FormBorderStyle = FormBorderStyle.FixedToolWindow
-        self.StartPosition = FormStartPosition.Manual
-        self.Size = Size(280, 86)
-        self.MinimumSize = Size(220, 80)
-
-        layout = FlowLayoutPanel()
-        layout.Dock = DockStyle.Fill
-        layout.Padding = Padding(8)
-        layout.WrapContents = False
-        self.Controls.Add(layout)
-
-        self.title_label = Label()
-        self.title_label.AutoSize = False
-        self.title_label.Width = 165
-        self.title_label.Height = 42
-        self.title_label.Font = Font("Segoe UI", 8, FontStyle.Regular)
-        layout.Controls.Add(self.title_label)
-
-        self.tags_button = Button()
-        self.tags_button.Text = "Tags"
-        self.tags_button.Width = 72
-        self.tags_button.Height = 34
-        self.tags_button.Enabled = False
-        self.tags_button.Click += self._show_tags
-        layout.Controls.Add(self.tags_button)
-
-    def wait_for_book(self):
-        self.current_book = None
-        self.title_label.Text = "Open a comic to browse tags."
-        self.tags_button.Enabled = False
-
-    def set_book(self, book):
-        self.current_book = book
-        self.title_label.Text = title_for_book(book)
-        self.tags_button.Enabled = True
-
-    def _show_tags(self, sender, event):
-        if self.current_book is not None:
-            gallery_panel.show_gallery_tag_panel([self.current_book], modal=False)
-
-
-def place_launcher(form):
-    try:
-        owner = COMICRACK_HOST.MainWindow
-        bounds = owner.Bounds
-        form.Left = bounds.Left + 24
-        form.Top = bounds.Top + 86
-    except Exception:
-        form.Left = 80
-        form.Top = 80
-
-
-def ensure_launcher():
-    global LAUNCHER
-
-    if LAUNCHER is None or LAUNCHER.IsDisposed:
-        debug_log("Creating Gallery Tag launcher")
-        LAUNCHER = ReaderTagLauncher()
-        place_launcher(LAUNCHER)
-        try:
-            LAUNCHER.Show(COMICRACK_HOST.MainWindow)
-        except Exception:
-            try:
-                LAUNCHER.Show()
-            except Exception as error:
-                debug_exception("Could not show Gallery Tag launcher", error)
-                raise
-
-    return LAUNCHER
-
-
-#@Name GalleryTagReaderLauncher
+#@Name Gallery Tag Panel (Auto Open)
 #@Key GalleryTagReaderLauncher
 #@Hook BookOpened
 #@Enabled true
-#@Description Shows a small floating Tags launcher while reading.
+#@Description Opens the Gallery Tag Panel when a comic is opened.
 def GalleryTagReaderLauncher(book):
     debug_log("BookOpened hook called")
     if book is None:
@@ -138,13 +34,12 @@ def GalleryTagReaderLauncher(book):
         return
 
     try:
-        set_comicrack(ComicRack)
-        launcher = ensure_launcher()
-        launcher.set_book(book)
-        try:
-            launcher.Activate()
-        except Exception:
-            pass
+        gallery_panel.set_comicrack(ComicRack)
+        gallery_panel.show_gallery_tag_panel(
+            [book],
+            modal=False,
+            replace_existing=True,
+        )
     except Exception as error:
         debug_exception("GalleryTagReaderLauncher failed", error)
 

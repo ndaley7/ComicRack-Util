@@ -178,6 +178,16 @@ def remember_panel(form):
     form.FormClosed += remove_panel
 
 
+def close_open_panels():
+    for form in list(OPEN_PANELS):
+        try:
+            if not form.IsDisposed:
+                form.Close()
+        except Exception:
+            pass
+    OPEN_PANELS[:] = []
+
+
 class GalleryTagPanelForm(Form):
     def __init__(self, selected_books, library_books, library_note):
         Form.__init__(self)
@@ -536,11 +546,14 @@ def GalleryTagPanel(books):
     show_gallery_tag_panel(books, modal=True)
 
 
-def show_gallery_tag_panel(books, modal=True):
+def show_gallery_tag_panel(books, modal=True, replace_existing=False):
     selected = list(books or [])
     if not selected:
         MessageBox.Show("Select at least one comic first.", "Gallery Tag Panel")
         return
+
+    if replace_existing:
+        close_open_panels()
 
     library, library_note = get_library_books(selected)
     form = GalleryTagPanelForm(selected, library, library_note)
@@ -557,3 +570,7 @@ def show_gallery_tag_panel(books, modal=True):
         form.Show(host.MainWindow)
     except Exception:
         form.Show()
+    try:
+        form.Activate()
+    except Exception:
+        pass

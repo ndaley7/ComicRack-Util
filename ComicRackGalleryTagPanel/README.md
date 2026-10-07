@@ -8,7 +8,7 @@ E-H-style metadata panel:
 - tags grouped by category
 - clickable tag chips
 - matching comics table using AND filters when multiple chips are selected
-- small floating reader launcher shown by the `BookOpened` hook
+- automatic full panel opening through the `BookOpened` hook
 - optional smart-list helper for saved tag searches
 
 This is a framework, not a polished final plugin. The library scan, metadata
@@ -82,20 +82,19 @@ Manual install is also fine:
    Right-click -> Automation -> GalleryTagPanel
    ```
 
-`Gallery Tags Startup Launcher` shows a small floating `Tags` window near the
-upper left of the ComicRack window when ComicRack starts. It says `Open a comic
-to browse tags` until a reader tab opens. When you open a comic in the reader,
-`GalleryTagReaderLauncher` updates that window for the current book. Click its
-`Tags` button to open the same grouped tag panel for the comic currently being
-read. If you do not want the floating reader launcher, disable `Gallery Tags
-Startup Launcher` and `GalleryTagReaderLauncher` in ComicRack's Scripts
-preferences.
+`Gallery Tag Panel (Auto Open)` opens the full modeless panel whenever a comic
+is opened. Opening another comic replaces the existing panel, so no persistent
+launcher windows are required. Disable this action in ComicRack's Scripts
+preferences if you prefer to open the panel manually.
+
+`Show Gallery Tag Panel` remains available as a manual Books action for the
+selected comic.
 
 The reader script also exposes ComicRack's sample-compatible
 `BookHasBeenOpened(book)` callback name, because some builds dispatch the
 book-open event by function name instead of by the `BookOpened` metadata hook.
 
-If the startup window does not appear, run `Show Gallery Tags Launcher` from a
+If the panel does not open automatically, run `Show Gallery Tag Panel` from a
 selected book's Automation menu. Script hook diagnostics are written to:
 
 ```text
