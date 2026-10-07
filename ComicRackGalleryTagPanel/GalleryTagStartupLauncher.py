@@ -27,9 +27,10 @@ startup_log("GalleryTagStartupLauncher module loading")
 def GalleryTagStartupLauncher():
     startup_log("Startup hook called")
     try:
-        from GalleryTagReaderLauncher import ensure_launcher
+        import GalleryTagReaderLauncher as reader_launcher
 
-        launcher = ensure_launcher()
+        reader_launcher.set_comicrack(ComicRack)
+        launcher = reader_launcher.ensure_launcher()
         launcher.wait_for_book()
         try:
             launcher.Activate()
@@ -48,10 +49,11 @@ def GalleryTagStartupLauncher():
 def GalleryTagShowLauncher(books):
     startup_log("Manual launcher hook called")
     try:
-        from GalleryTagReaderLauncher import ensure_launcher
+        import GalleryTagReaderLauncher as reader_launcher
 
+        reader_launcher.set_comicrack(ComicRack)
         selected = list(books or [])
-        launcher = ensure_launcher()
+        launcher = reader_launcher.ensure_launcher()
         if selected:
             launcher.set_book(selected[0])
         else:

@@ -16,11 +16,18 @@ from System.Windows.Forms import (
     Padding,
 )
 
-from GalleryTagPanel import show_gallery_tag_panel
+import GalleryTagPanel as gallery_panel
 from gallery_tag_core import title_for_book
 
 
 LAUNCHER = None
+COMICRACK_HOST = None
+
+
+def set_comicrack(host):
+    global COMICRACK_HOST
+    COMICRACK_HOST = host
+    gallery_panel.set_comicrack(host)
 
 
 def debug_log(message):
@@ -86,12 +93,12 @@ class ReaderTagLauncher(Form):
 
     def _show_tags(self, sender, event):
         if self.current_book is not None:
-            show_gallery_tag_panel([self.current_book], modal=False)
+            gallery_panel.show_gallery_tag_panel([self.current_book], modal=False)
 
 
 def place_launcher(form):
     try:
-        owner = ComicRack.MainWindow
+        owner = COMICRACK_HOST.MainWindow
         bounds = owner.Bounds
         form.Left = bounds.Left + 24
         form.Top = bounds.Top + 86
@@ -108,7 +115,7 @@ def ensure_launcher():
         LAUNCHER = ReaderTagLauncher()
         place_launcher(LAUNCHER)
         try:
-            LAUNCHER.Show(ComicRack.MainWindow)
+            LAUNCHER.Show(COMICRACK_HOST.MainWindow)
         except Exception:
             try:
                 LAUNCHER.Show()
@@ -131,6 +138,7 @@ def GalleryTagReaderLauncher(book):
         return
 
     try:
+        set_comicrack(ComicRack)
         launcher = ensure_launcher()
         launcher.set_book(book)
         try:
