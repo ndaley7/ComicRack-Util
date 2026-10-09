@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 
 from comicrack_master import (
     AppSettings,
+    archive_comicinfo_writer,
     archive_next_step,
     gallery_category_from_info_text,
     info_text_indicates_english,
@@ -19,6 +20,7 @@ from comicrack_master import (
     save_app_settings,
     save_source_state,
     scan_source_directory,
+    series_export_records,
     sorted_archive_records,
     sync_series_list,
     sync_selected_archives,
@@ -171,7 +173,7 @@ class ComicRackMasterTests(unittest.TestCase):
     def test_sync_series_list_creates_unsorted_entries_for_all_records(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)
-            write_archive(source / "First.zip", {"page.jpg": "image"})
+            write_archive(source / "First.zip", {"ComicInfo.xml": "<ComicInfo><Writer>Writer One</Writer></ComicInfo>"})
             write_archive(source / "Second.cbz", {"page.jpg": "image"})
             records = scan_source_directory(source)
 
@@ -183,14 +185,14 @@ class ComicRackMasterTests(unittest.TestCase):
             self.assertIsNotNone(series)
             self.assertEqual(series.get("name"), "unsorted")
             self.assertEqual(
-                [(comic.get("number"), comic.text) for comic in series.findall("comic")],
-                [("0", "First.zip"), ("0", "Second.cbz")],
+                [(comic.get("number"), comic.get("writer"), comic.text) for comic in series.findall("comic")],
+                [("0", "Writer One", "First.zip"), ("0", "", "Second.cbz")],
             )
 
     def test_sync_series_list_preserves_existing_assignments_and_adds_new_unsorted(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)
-            write_archive(source / "Alpha.cbz", {"page.jpg": "image"})
+            write_archive(source / "Alpha.cbz", {"ComicInfo.xml": "<ComicInfo><Writer>Writer Alpha</Writer></ComicInfo>"})
             write_archive(source / "Beta.cbz", {"page.jpg": "image"})
             write_archive(source / "Gamma.cbz", {"page.jpg": "image"})
             (source / "series.xml").write_text(
@@ -198,10 +200,10 @@ class ComicRackMasterTests(unittest.TestCase):
                 '<comics>\n'
                 '  <series name="unsorted">\n'
                 '    <comic number="0">Missing.cbz</comic>\n'
-                '    <comic number="0">Beta.cbz</comic>\n'
+                '    <comic number="0" writer="Existing Beta">Beta.cbz</comic>\n'
                 '  </series>\n'
                 '  <series name="Featured">\n'
-                '    <comic number="2">Alpha.cbz</comic>\n'
+                '    <comic number="2" writer="Old Alpha">Alpha.cbz</comic>\n'
                 '  </series>\n'
                 '</comics>\n',
                 encoding="utf-8",
@@ -212,12 +214,65 @@ class ComicRackMasterTests(unittest.TestCase):
 
             root = ElementTree.parse(source / "series.xml").getroot()
             grouped = {
-                series.get("name"): [(comic.get("number"), comic.text) for comic in series.findall("comic")]
+                series.get("name"): [
+                    (comic.get("number"), comic.get("writer"), comic.text) for comic in series.findall("comic")
+                ]
                 for series in root.findall("series")
             }
-            self.assertEqual(grouped["Featured"], [("2", "Alpha.cbz")])
-            self.assertEqual(grouped["unsorted"], [("0", "Beta.cbz"), ("0", "Gamma.cbz")])
-            self.assertNotIn("Missing.cbz", (comic for comics in grouped.values() for _number, comic in comics))
+            self.assertEqual(grouped["Featured"], [("2", "Writer Alpha", "Alpha.cbz")])
+            self.assertEqual(grouped["unsorted"], [("0", "Existing Beta", "Beta.cbz"), ("0", "", "Gamma.cbz")])
+            self.assertNotIn("Missing.cbz", (comic for comics in grouped.values() for _number, _writer, comic in comics))
+
+    def test_archive_comicinfo_writer_reads_nested_comicinfo(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            archive_path = source / "Nested.cbz"
+            write_archive(archive_path, {"Gallery/ComicInfo.xml": "<ComicInfo><Writer>Nested Writer</Writer></ComicInfo>"})
+
+            self.assertEqual(archive_comicinfo_writer(archive_path), "Nested Writer")
+
+    def test_series_export_records_prefers_translated_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Original.cbz", {"info.txt": "Language: Japanese"})
+            write_archive(source / "Original-translatedENG.cbz", {"info.txt": "Language: English"})
+            records = scan_source_directory(source)
+
+            export_records = series_export_records(records)
+
+            self.assertEqual([record.relative_path for record in export_records], ["Original-translatedENG.cbz"])
+
+    def test_sync_series_list_dedupes_translated_duplicate_and_preserves_original_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Original.cbz", {"info.txt": "Language: Japanese"})
+            write_archive(
+                source / "Original-translatedENG.cbz",
+                {
+                    "info.txt": "Language: English",
+                    "ComicInfo.xml": "<ComicInfo><Writer>Translated Writer</Writer></ComicInfo>",
+                },
+            )
+            (source / "series.xml").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<comics>\n'
+                '  <series name="Sorted">\n'
+                '    <comic number="7" writer="Original Writer">Original.cbz</comic>\n'
+                '  </series>\n'
+                '</comics>\n',
+                encoding="utf-8",
+            )
+            records = scan_source_directory(source)
+
+            sync_series_list(source, records)
+
+            root = ElementTree.parse(source / "series.xml").getroot()
+            comics = [
+                (series.get("name"), comic.get("number"), comic.get("writer"), comic.text)
+                for series in root.findall("series")
+                for comic in series.findall("comic")
+            ]
+            self.assertEqual(comics, [("Sorted", "7", "Translated Writer", "Original-translatedENG.cbz")])
 
     def test_sync_copies_only_archives_with_root_comicinfo(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw, tempfile.TemporaryDirectory() as remote_raw:

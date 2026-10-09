@@ -143,10 +143,61 @@ def save_source_state(source_dir: Path, records: list[ArchiveRecord], settings: 
     )
 
 
+def archive_comicinfo_writer(archive_path: Path) -> str:
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            for name in archive.namelist():
+                if archive_basename(name) != "comicinfo.xml":
+                    continue
+                try:
+                    root = ElementTree.fromstring(archive.read(name))
+                except (KeyError, RuntimeError, ElementTree.ParseError, zipfile.BadZipFile):
+                    return ""
+                writer = root.findtext("Writer") or ""
+                return writer.strip()
+    except (OSError, zipfile.BadZipFile):
+        return ""
+
+    return ""
+
+
+def series_duplicate_key(name: str) -> str:
+    normalized = normalized_archive_name(name)
+    archive_path = Path(normalized)
+    stem = archive_path.stem
+    suffix_marker = f"-{TRANSLATED_ENG_SUFFIX}"
+    if stem.casefold().endswith(suffix_marker):
+        stem = stem[: -len(suffix_marker)]
+    return (archive_path.parent / stem).as_posix().casefold()
+
+
+def series_export_records(records: list[ArchiveRecord]) -> list[ArchiveRecord]:
+    by_key: dict[str, ArchiveRecord] = {}
+
+    def priority(record: ArchiveRecord) -> tuple[int, int, int, str]:
+        return (
+            int(is_translated_archive_name(record.filename)),
+            int(record.english),
+            int(record.cbz),
+            record.relative_path.casefold(),
+        )
+
+    for record in records:
+        key = series_duplicate_key(record.relative_path)
+        previous = by_key.get(key)
+        if previous is None or priority(record) > priority(previous):
+            by_key[key] = record
+
+    return [record for record in records if by_key[series_duplicate_key(record.relative_path)] is record]
+
+
 def sync_series_list(source_dir: Path, records: list[ArchiveRecord]) -> Path:
     path = series_list_path(source_dir)
-    current_comics = {record.relative_path for record in records}
-    assignments: dict[str, tuple[str, str]] = {}
+    export_records = series_export_records(records)
+    current_comics = {record.relative_path for record in export_records}
+    current_keys = {series_duplicate_key(record.relative_path) for record in export_records}
+    assignments: dict[str, tuple[str, str, str]] = {}
+    assignment_keys: dict[str, tuple[str, str, str]] = {}
     series_order: list[str] = []
 
     if path.exists():
@@ -162,19 +213,29 @@ def sync_series_list(source_dir: Path, records: list[ArchiveRecord]) -> Path:
                     series_order.append(series_name)
                 for comic in series.findall("comic"):
                     comic_name = (comic.text or "").strip()
-                    if comic_name and comic_name in current_comics and comic_name not in assignments:
-                        assignments[comic_name] = (series_name, comic.get("number") or "0")
+                    if not comic_name:
+                        continue
+                    assignment = (series_name, comic.get("number") or "0", comic.get("writer") or "")
+                    if comic_name in current_comics and comic_name not in assignments:
+                        assignments[comic_name] = assignment
+                    duplicate_key = series_duplicate_key(comic_name)
+                    if duplicate_key in current_keys and duplicate_key not in assignment_keys:
+                        assignment_keys[duplicate_key] = assignment
 
     if "unsorted" not in series_order:
         series_order.insert(0, "unsorted")
 
-    grouped: dict[str, list[tuple[str, str]]] = {series_name: [] for series_name in series_order}
-    for record in records:
-        series_name, number = assignments.get(record.relative_path, ("unsorted", "0"))
+    grouped: dict[str, list[tuple[str, str, str]]] = {series_name: [] for series_name in series_order}
+    for record in export_records:
+        series_name, number, existing_writer = assignments.get(
+            record.relative_path,
+            assignment_keys.get(series_duplicate_key(record.relative_path), ("unsorted", "0", "")),
+        )
+        writer = archive_comicinfo_writer(source_dir / record.relative_path) or existing_writer
         if series_name not in grouped:
             grouped[series_name] = []
             series_order.append(series_name)
-        grouped[series_name].append((number, record.relative_path))
+        grouped[series_name].append((number, writer, record.relative_path))
 
     root = ElementTree.Element("comics")
     for series_name in series_order:
@@ -182,8 +243,8 @@ def sync_series_list(source_dir: Path, records: list[ArchiveRecord]) -> Path:
         if not comics and series_name != "unsorted":
             continue
         series = ElementTree.SubElement(root, "series", {"name": series_name})
-        for number, comic_name in comics:
-            comic = ElementTree.SubElement(series, "comic", {"number": number})
+        for number, writer, comic_name in comics:
+            comic = ElementTree.SubElement(series, "comic", {"number": number, "writer": writer})
             comic.text = comic_name
 
     ElementTree.indent(root, space="  ")
