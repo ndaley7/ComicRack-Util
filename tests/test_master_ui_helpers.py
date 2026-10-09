@@ -7,6 +7,8 @@ from unittest import mock
 
 from master_ui import (
     ComicRackMasterUI,
+    NEXT_STEP_ROW_COLORS,
+    NEXT_STEP_ROW_TAGS,
     SkipArchive,
     TREE_COLUMNS,
     archive_record_from_path,
@@ -31,6 +33,20 @@ def write_archive(path: Path, entries: dict[str, str]) -> None:
 class MasterUiHelperTests(unittest.TestCase):
     def test_tree_columns_show_english_before_comicinfo(self) -> None:
         self.assertLess(TREE_COLUMNS.index("english"), TREE_COLUMNS.index("comicinfo"))
+
+    def test_next_step_row_colors_cover_workflow_states(self) -> None:
+        expected_steps = {
+            "Problem",
+            "Convert to CBZ",
+            "Needs info.txt",
+            "Needs translation",
+            "Needs ComicInfo.xml",
+            "Ready to sync",
+            "Done",
+        }
+
+        self.assertEqual(set(NEXT_STEP_ROW_TAGS), expected_steps)
+        self.assertTrue(all(tag in NEXT_STEP_ROW_COLORS for tag in NEXT_STEP_ROW_TAGS.values()))
 
     def test_archive_record_from_path_reads_current_workflow_flags(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:

@@ -8,13 +8,17 @@ import re
 import shutil
 import zipfile
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 
 APP_CONFIG_FILENAME = "master_ui_settings.json"
 STATE_FILENAME = ".comicrack_master_state.json"
+SERIES_FILENAME = "series.xml"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 TRANSLATED_DIR_NAME = "Translated"
 CG_GALLERY_CATEGORIES = {"artist cg", "game cg"}
 TRANSLATED_CATEGORIES = {"western"}
@@ -45,6 +49,11 @@ class ArchiveRecord:
     size: int
     modified: float
     error: str = ""
+    last_action: str = ""
+    last_result: str = ""
+    last_message: str = ""
+    last_timestamp: str = ""
+    history: list[dict[str, str]] = field(default_factory=list)
 
 
 def repo_root() -> Path:
@@ -57,6 +66,10 @@ def app_config_path(base_dir: Path | None = None) -> Path:
 
 def source_state_path(source_dir: Path) -> Path:
     return source_dir / STATE_FILENAME
+
+
+def series_list_path(source_dir: Path) -> Path:
+    return source_dir / SERIES_FILENAME
 
 
 def load_app_settings(base_dir: Path | None = None) -> AppSettings:
@@ -128,6 +141,78 @@ def save_source_state(source_dir: Path, records: list[ArchiveRecord], settings: 
         encoding="utf-8",
         newline="\n",
     )
+
+
+def sync_series_list(source_dir: Path, records: list[ArchiveRecord]) -> Path:
+    path = series_list_path(source_dir)
+    current_comics = {record.relative_path for record in records}
+    assignments: dict[str, tuple[str, str]] = {}
+    series_order: list[str] = []
+
+    if path.exists():
+        try:
+            root = ElementTree.parse(path).getroot()
+        except (OSError, ElementTree.ParseError):
+            root = None
+
+        if root is not None and root.tag == "comics":
+            for series in root.findall("series"):
+                series_name = series.get("name") or "unsorted"
+                if series_name not in series_order:
+                    series_order.append(series_name)
+                for comic in series.findall("comic"):
+                    comic_name = (comic.text or "").strip()
+                    if comic_name and comic_name in current_comics and comic_name not in assignments:
+                        assignments[comic_name] = (series_name, comic.get("number") or "0")
+
+    if "unsorted" not in series_order:
+        series_order.insert(0, "unsorted")
+
+    grouped: dict[str, list[tuple[str, str]]] = {series_name: [] for series_name in series_order}
+    for record in records:
+        series_name, number = assignments.get(record.relative_path, ("unsorted", "0"))
+        if series_name not in grouped:
+            grouped[series_name] = []
+            series_order.append(series_name)
+        grouped[series_name].append((number, record.relative_path))
+
+    root = ElementTree.Element("comics")
+    for series_name in series_order:
+        comics = grouped.get(series_name, [])
+        if not comics and series_name != "unsorted":
+            continue
+        series = ElementTree.SubElement(root, "series", {"name": series_name})
+        for number, comic_name in comics:
+            comic = ElementTree.SubElement(series, "comic", {"number": number})
+            comic.text = comic_name
+
+    ElementTree.indent(root, space="  ")
+    xml_body = ElementTree.tostring(root, encoding="unicode")
+    path.write_text(
+        f'<?xml version="1.0" encoding="UTF-8"?>\n{xml_body}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    return path
+
+
+def workflow_timestamp() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def record_workflow_event(record: ArchiveRecord, action: str, result: str, message: str = "") -> None:
+    timestamp = workflow_timestamp()
+    event = {
+        "timestamp": timestamp,
+        "action": action,
+        "result": result,
+        "message": message,
+    }
+    record.last_action = action
+    record.last_result = result
+    record.last_message = message
+    record.last_timestamp = timestamp
+    record.history = [*record.history[-19:], event]
 
 
 def iter_candidate_archives(source_dir: Path) -> list[Path]:
@@ -221,9 +306,15 @@ def is_artist_or_game_cg_archive(archive_path: Path) -> bool:
 
 def info_text_indicates_english(content: str) -> bool:
     category = gallery_category_from_info_text(content)
-    return "english" in content.lower() or (
-        category is not None and category.strip().casefold() in TRANSLATED_CATEGORIES
-    )
+    if category is not None and category.strip().casefold() in TRANSLATED_CATEGORIES:
+        return True
+
+    for line in content.splitlines():
+        match = re.match(r"\s*Language\s*[:=]\s*(.+?)\s*$", line, flags=re.IGNORECASE)
+        if match:
+            return "english" in match.group(1).casefold()
+
+    return False
 
 
 def read_archive_flags(archive_path: Path) -> tuple[bool, bool, bool, str]:
@@ -298,6 +389,9 @@ def scan_source_directory(
         suffix = archive_path.suffix.lower()
         default_selected = suffix == ".cbz"
         selected = bool(previous.get("selected", default_selected)) if isinstance(previous, dict) else default_selected
+        history = previous.get("history", []) if isinstance(previous, dict) else []
+        if not isinstance(history, list):
+            history = []
         filename_says_english = "english" in archive_path.name.lower()
         filename_says_translated = is_translated_archive_name(archive_path.name)
 
@@ -315,6 +409,11 @@ def scan_source_directory(
                 size=stat.st_size,
                 modified=stat.st_mtime,
                 error=error,
+                last_action=str(previous.get("last_action", "")) if isinstance(previous, dict) else "",
+                last_result=str(previous.get("last_result", "")) if isinstance(previous, dict) else "",
+                last_message=str(previous.get("last_message", "")) if isinstance(previous, dict) else "",
+                last_timestamp=str(previous.get("last_timestamp", "")) if isinstance(previous, dict) else "",
+                history=[event for event in history if isinstance(event, dict)][-20:],
             )
         )
 
@@ -336,6 +435,53 @@ def records_as_copy_list(records: list[ArchiveRecord]) -> str:
     return "\n".join(record.relative_path for record in records)
 
 
+def archive_next_step(record: ArchiveRecord) -> str:
+    if record.error:
+        return "Problem"
+    if record.synced:
+        return "Done"
+    if not record.cbz:
+        return "Convert to CBZ"
+    if not record.has_info:
+        return "Needs info.txt"
+    if not record.english:
+        return "Needs translation"
+    if not record.has_comicinfo:
+        return "Needs ComicInfo.xml"
+    return "Ready to sync"
+
+
+def archive_matches_filter(record: ArchiveRecord, filter_name: str) -> bool:
+    if filter_name == "Needs Work":
+        return archive_next_step(record) not in {"Done", "Ready to sync"}
+    if filter_name == "Ready to Sync":
+        return archive_next_step(record) == "Ready to sync"
+    if filter_name == "Problems":
+        return bool(record.error)
+    if filter_name == "Already Synced":
+        return record.synced
+    if filter_name == "Non-English":
+        return record.has_info and not record.english
+    if filter_name == "Missing Info":
+        return not record.has_info
+    return True
+
+
+def archive_image_count(archive_path: Path) -> tuple[int, str]:
+    try:
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            count = sum(
+                1
+                for name in archive.namelist()
+                if Path(archive_basename(name)).suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+            )
+            return count, ""
+    except zipfile.BadZipFile:
+        return 0, "Invalid ZIP/CBZ archive."
+    except OSError as exc:
+        return 0, str(exc)
+
+
 def sorted_archive_records(records: list[ArchiveRecord], column: str, reverse: bool = False) -> list[ArchiveRecord]:
     def sort_key(record: ArchiveRecord) -> tuple[Any, str]:
         if column == "selected":
@@ -352,6 +498,10 @@ def sorted_archive_records(records: list[ArchiveRecord], column: str, reverse: b
             value = int(record.english)
         elif column == "synced":
             value = int(record.synced)
+        elif column == "next":
+            value = archive_next_step(record).lower()
+        elif column == "last":
+            value = record.last_timestamp.lower()
         elif column == "error":
             value = record.error.lower()
         else:
@@ -363,7 +513,7 @@ def sorted_archive_records(records: list[ArchiveRecord], column: str, reverse: b
 
 def sync_selected_archives(records: list[ArchiveRecord], source_dir: Path, remote_sync_target: str) -> list[str]:
     if not remote_sync_target:
-        raise ValueError("Remote Sync Target is not set.")
+        raise ValueError("Final Library Destination is not set.")
 
     remote_dir = Path(remote_sync_target).expanduser()
     remote_dir.mkdir(parents=True, exist_ok=True)
@@ -388,3 +538,27 @@ def sync_selected_archives(records: list[ArchiveRecord], source_dir: Path, remot
         messages.append(f"Copied {record.relative_path}")
 
     return messages
+
+
+def sync_archive_path(archive_path: Path, source_dir: Path, remote_sync_target: str) -> str:
+    if not remote_sync_target:
+        raise ValueError("Final Library Destination is not set.")
+
+    has_root_comicinfo, error = archive_has_root_comicinfo(archive_path)
+    display = archive_path.relative_to(source_dir).as_posix() if archive_path.is_relative_to(source_dir) else archive_path.name
+    if error:
+        raise RuntimeError(f"Skipped {display}: could not check root ComicInfo.xml ({error})")
+    if not has_root_comicinfo:
+        raise RuntimeError(f"Skipped {display}: root ComicInfo.xml not found")
+
+    remote_dir = Path(remote_sync_target).expanduser()
+    remote_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        relative_path = archive_path.relative_to(source_dir)
+    except ValueError:
+        relative_path = Path(archive_path.name)
+
+    destination = remote_dir / relative_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(archive_path, destination)
+    return f"Copied {relative_path.as_posix()}"

@@ -1,4 +1,5 @@
 const BOM = '\uFEFF';
+const TRANSLATED_CATEGORIES = new Set(['western']);
 
 export function decodeInfoText(buffer) {
   const text = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer);
@@ -22,3 +23,16 @@ export function updateLanguageToEnglish(infoText) {
     updatedText: `${infoText.slice(0, match.index)}${replacement}${infoText.slice(match.index + match[0].length)}`
   };
 }
+
+export function infoTextIndicatesEnglish(infoText) {
+  const categoryLinePattern = /^[ \t]*Category[ \t]*[:=][ \t]*(.+?)[ \t]*$/im;
+  const match = categoryLinePattern.exec(infoText);
+  if (match && TRANSLATED_CATEGORIES.has(match[1].trim().toLowerCase())) {
+    return true;
+  }
+
+  const languageLinePattern = /^[ \t]*Language[ \t]*[:=][ \t]*(.+?)[ \t]*$/im;
+  const languageMatch = languageLinePattern.exec(infoText);
+  return languageMatch ? languageMatch[1].trim().toLowerCase().includes('english') : false;
+}
+

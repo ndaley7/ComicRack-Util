@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { updateLanguageToEnglish } from '../src/infoTxt.js';
+import { infoTextIndicatesEnglish, updateLanguageToEnglish } from '../src/infoTxt.js';
 
 test('updates only the main Language metadata line', () => {
   const input = [
@@ -28,4 +28,9 @@ test('supports equals separators and mixed case labels', () => {
 
 test('throws when no metadata language line is found', () => {
   assert.throws(() => updateLanguageToEnglish('> language: chinese\n'), /Language line/);
+});
+test('detects English from the main Language metadata line only', () => {
+  assert.equal(infoTextIndicatesEnglish('Language: English\n'), true);
+  assert.equal(infoTextIndicatesEnglish('Language: Japanese\nUploader Comment:\nEnglish translation requested\n'), false);
+  assert.equal(infoTextIndicatesEnglish('Category: Western\nLanguage: Japanese\n'), true);
 });

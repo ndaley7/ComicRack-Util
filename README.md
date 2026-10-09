@@ -11,7 +11,7 @@ tracking archive status, and running the utility scripts from one place.
 python .\master_ui.py
 ```
 
-The UI remembers the `ComicRack Source`, `Remote Sync Target`, and
+The UI remembers the `ComicRack Source`, `Final Library Destination`, and
 `Fansadox Source` path fields in `master_ui_settings.json` beside the script.
 Per-archive status and checkbox selection state are stored in
 `.comicrack_master_state.json` inside the selected ComicRack Source folder.
@@ -25,12 +25,21 @@ columns; those widths persist between runs. Use the bottom **Comic List** button
 to open a copyable plain-text list of the currently loaded comics.
 
 The workflow columns are ordered as **CBZ**, **Info**, **ENGLISH**,
-**ComicInfo**, and **Synced**. When you run a later workflow tool from the UI,
+**ComicInfo**, **Synced**, **Next Step**, **Last Run**, and **Status**.
+Use the filter menu to focus on **Needs Work**, **Ready to Sync**,
+**Problems**, **Already Synced**, **Non-English**, or **Missing Info** rows.
+When you run a later workflow tool from the UI,
 the UI confirms the preceding columns first and runs missing prerequisite steps
 when it can. For example, **Translate** first confirms CBZ and `info.txt`.
+**Process to Final** runs the full prerequisite chain for selected archives,
+then copies finished archives to the Final Library Destination.
 **Sync Selected** only copies selected archives that already contain
 `ComicInfo.xml` at the archive root; selected archives without that root entry
 are skipped, and the rest of the selected batch continues.
+Before translation and full final-processing runs, the UI shows a preflight
+summary with selected counts, likely translation work, destination, and
+environment checks. Compact last-run history is stored with the per-source
+state so rescans can show when an archive was last processed.
 
 ## ComicRack Gallery Tag Panel
 
@@ -188,7 +197,7 @@ Include subdirectories:
 python .\ZiptoCBZ\zip_to_cbz.py "C:\path\to\comics" --recursive
 ```
 
-When both `Example.zip` and `Example.cbz` exist, the script keeps the larger archive and moves the smaller one into a `Duplicates` folder. If they are the same size, it keeps the existing `.cbz`. When flattening an archive, it moves the original `.cbz` into `Duplicates` as a backup before replacing it with the flattened version.
+When both `Example.zip` and `Example.cbz` exist, the script keeps the larger archive and moves the smaller one into an `_DUPLICATES` folder. If they are the same size, it keeps the existing `.cbz`. When flattening an archive, it moves the original `.cbz` into `_DUPLICATES` as a backup before replacing it with the flattened version.
 
 ## TranslateEXGallery
 
@@ -211,6 +220,8 @@ Translation is skipped without contacting Torii when:
 
 - the archive filename contains the word `English`, case-insensitively
 - the archive filename stem ends with `translatedENG`, case-insensitively
+- the main `Language:` metadata line in `info.txt` contains `English`, case-insensitively
+- `info.txt` has a translated category such as `Category: Western`
 - the archive does not contain an `info.txt` file
 
 ## Setup

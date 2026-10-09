@@ -181,6 +181,52 @@ test('skips without Torii calls when archive filename ends with translatedENG', 
   assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
 });
 
+test('skips without Torii calls when info.txt language is English', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.cbz');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('already-english-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Language: English\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created for English info.txt archives.');
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, true);
+  assert.match(result.reason, /info\.txt indicates English/);
+  assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});
+
+test('skips without Torii calls when info.txt category is a translated category', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
+  const inputZipPath = path.join(tempDir, 'sample.cbz');
+
+  const inputZip = new AdmZip();
+  inputZip.addFile('Gallery/MCN_1.webp', Buffer.from('already-translated-image'));
+  inputZip.addFile('Gallery/info.txt', Buffer.from('Category: Western\r\nLanguage: Japanese\r\n', 'utf8'));
+  inputZip.writeZip(inputZipPath);
+
+  const events = [];
+  const result = await translateGalleryZip({
+    inputZipPath,
+    createToriiClient: () => {
+      throw new Error('Torii client should not be created for translated-category archives.');
+    },
+    onProgress: (event) => events.push(event)
+  });
+
+  assert.equal(result.skipped, true);
+  assert.match(result.reason, /info\.txt indicates English/);
+  assert.deepEqual(events, [{ type: 'skipped', reason: result.reason }]);
+});
+
 test('skips without Torii calls when info.txt is missing', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'translate-ex-gallery-'));
   const inputZipPath = path.join(tempDir, 'sample.zip');

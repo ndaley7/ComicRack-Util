@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "ZiptoCBZ" / "zip_to_cbz.py"
 PROBLEMS_DIR_NAME = "_PROBLEMS"
+DUPLICATES_DIR_NAME = "_DUPLICATES"
 
 
 class ZipToCbzTests(unittest.TestCase):
@@ -91,6 +92,30 @@ class ZipToCbzTests(unittest.TestCase):
             self.assertIn("Moved invalid ZIP/CBZ archive to _PROBLEMS", output)
             self.assertFalse(archive_path.exists())
             self.assertTrue((source / PROBLEMS_DIR_NAME / "Broken.cbz").exists())
+
+    def test_cli_moves_duplicate_zip_to_standard_duplicates_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            cbz_path = source / "Comic.cbz"
+            zip_path = source / "Comic.zip"
+            with zipfile.ZipFile(cbz_path, "w") as archive:
+                archive.writestr("page.jpg", "larger image payload")
+            zip_path.write_bytes(b"small")
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(zip_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            self.assertTrue(cbz_path.exists())
+            self.assertFalse(zip_path.exists())
+            self.assertTrue((source / DUPLICATES_DIR_NAME / "Comic.zip").exists())
 
 
 if __name__ == "__main__":

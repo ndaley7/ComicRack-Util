@@ -17,11 +17,15 @@ from typing import Any, Callable
 from comicrack_master import (
     AppSettings,
     ArchiveRecord,
+    archive_image_count,
+    archive_matches_filter,
+    archive_next_step,
     is_artist_or_game_cg_archive,
     is_translated_archive_name,
     load_app_settings,
     load_source_state,
     move_source_archive_to_translated_folder,
+    record_workflow_event,
     repo_root,
     records_as_copy_list,
     read_archive_flags,
@@ -29,6 +33,8 @@ from comicrack_master import (
     save_source_state,
     scan_source_directory,
     sorted_archive_records,
+    sync_series_list,
+    sync_archive_path,
     sync_selected_archives,
     update_record_selection,
 )
@@ -45,17 +51,48 @@ TREE_HEADINGS = {
     "english": "ENGLISH",
     "comicinfo": "ComicInfo",
     "synced": "Synced",
+    "next": "Next Step",
+    "last": "Last Run",
     "error": "Status",
 }
 TREE_COLUMNS = tuple(TREE_HEADINGS.keys())
+FILTER_OPTIONS = (
+    "All",
+    "Needs Work",
+    "Ready to Sync",
+    "Problems",
+    "Already Synced",
+    "Non-English",
+    "Missing Info",
+)
+NEXT_STEP_ROW_TAGS = {
+    "Problem": "step_problem",
+    "Convert to CBZ": "step_convert",
+    "Needs info.txt": "step_info",
+    "Needs translation": "step_translate",
+    "Needs ComicInfo.xml": "step_comicinfo",
+    "Ready to sync": "step_ready",
+    "Done": "step_done",
+}
+NEXT_STEP_ROW_COLORS = {
+    "step_problem": "#f8d7da",
+    "step_convert": "#fde2e2",
+    "step_info": "#fdecc8",
+    "step_translate": "#fff4c2",
+    "step_comicinfo": "#e8f3c8",
+    "step_ready": "#d7f0d2",
+    "step_done": "#c8eecf",
+}
 DEFAULT_COLUMN_WIDTHS = {
     "selected": 54,
-    "file": 430,
+    "file": 360,
     "cbz": 92,
     "info": 92,
     "english": 92,
     "comicinfo": 92,
     "synced": 92,
+    "next": 150,
+    "last": 145,
     "error": 150,
 }
 COLUMN_MIN_WIDTHS = {
@@ -66,6 +103,8 @@ COLUMN_MIN_WIDTHS = {
     "english": 82,
     "comicinfo": 82,
     "synced": 82,
+    "next": 120,
+    "last": 120,
     "error": 100,
 }
 
@@ -263,6 +302,7 @@ class ComicRackMasterUI(tk.Tk):
         self.translate_cg_var = tk.BooleanVar(value=self.settings.translate_cg_galleries)
         self.super_saver_var = tk.BooleanVar(value=self.settings.super_saver_mode)
         self.paddle_ocr_cuda_var = tk.BooleanVar(value=self.settings.paddle_ocr_cuda_enabled)
+        self.filter_var = tk.StringVar(value=FILTER_OPTIONS[0])
         self.status_var = tk.StringVar(value="Ready")
         self.selected_count_var = tk.StringVar(value="No archives selected")
         self.progress_text_var = tk.StringVar(value="")
@@ -293,34 +333,34 @@ class ComicRackMasterUI(tk.Tk):
         self._add_path_row(
             path_frame,
             1,
-            "Remote Sync Target",
+            "Final Library Destination",
             self.remote_var,
-            "Folder used to check and copy selected archives during sync.",
+            "Folder used for final copied archives after translation and ComicInfo.xml are complete.",
         )
         self._add_path_row(
             path_frame,
             2,
             "Fansadox Source",
             self.fansadox_var,
-            "Reference source path reserved for Fansadox-related utilities.",
+            "Optional reference source path for Fansadox-related utilities.",
         )
 
         toolbar = ttk.Frame(self, padding=(10, 0, 10, 6))
         toolbar.grid(row=1, column=0, sticky="ew")
-        toolbar.columnconfigure(12, weight=1)
+        toolbar.columnconfigure(13, weight=1)
 
         self._add_button(toolbar, "Rescan", self.rescan, 0, "Force-refresh archive status from the ComicRack Source folder.")
         self._add_button(toolbar, "Select All", self.select_all, 1, "Select every listed archive.")
         self._add_button(toolbar, "Select None", self.select_none, 2, "Clear all archive selections.")
-        self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 3, "Rename selected ZIP archives to CBZ and flatten a redundant same-named top-level folder when present.")
-        self._add_button(toolbar, "Translate", self.translate_selected, 4, "Confirm CBZ and info.txt first, then run TranslateEXGallery for selected non-English archives.")
+        self._add_button(toolbar, "Zip to CBZ", self.convert_zip_to_cbz, 0, "Rename selected ZIP archives to CBZ and flatten a redundant same-named top-level folder when present.", row=1)
+        self._add_button(toolbar, "Translate", self.translate_selected, 1, "Confirm CBZ and info.txt first, then run TranslateEXGallery for selected non-English archives.", row=1)
         translate_cg_check = ttk.Checkbutton(
             toolbar,
             text="Artist/Game CG",
             variable=self.translate_cg_var,
             command=lambda: self.save_current_settings(save_archive_state=False),
         )
-        translate_cg_check.grid(row=0, column=5, padx=(0, 6), pady=2)
+        translate_cg_check.grid(row=1, column=2, padx=(0, 6), pady=2)
         Tooltip(translate_cg_check, "Allow Translate to process archives whose info.txt category is Artist CG or Game CG.")
         self.action_buttons.append(translate_cg_check)
         super_saver_check = ttk.Checkbutton(
@@ -329,7 +369,7 @@ class ComicRackMasterUI(tk.Tk):
             variable=self.super_saver_var,
             command=lambda: self.save_current_settings(save_archive_state=False),
         )
-        super_saver_check.grid(row=0, column=6, padx=(0, 6), pady=2)
+        super_saver_check.grid(row=1, column=3, padx=(0, 6), pady=2)
         Tooltip(super_saver_check, "Use PaddleOCR to skip translating pages where no text boxes are detected.")
         self.action_buttons.append(super_saver_check)
         paddle_ocr_cuda_check = ttk.Checkbutton(
@@ -338,19 +378,34 @@ class ComicRackMasterUI(tk.Tk):
             variable=self.paddle_ocr_cuda_var,
             command=lambda: self.save_current_settings(save_archive_state=False),
         )
-        paddle_ocr_cuda_check.grid(row=0, column=7, padx=(0, 6), pady=2)
+        paddle_ocr_cuda_check.grid(row=1, column=4, padx=(0, 6), pady=2)
         Tooltip(
             paddle_ocr_cuda_check,
             "Run Super-Saver PaddleOCR text detection on CUDA GPU 0. Requires a GPU-enabled PaddlePaddle install.",
         )
         self.action_buttons.append(paddle_ocr_cuda_check)
-        self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 8, "Confirm CBZ, info.txt, and English first, then add ComicInfo.xml.")
-        self._add_button(toolbar, "Sync Selected", self.sync_selected, 9, "Copy selected archives with root ComicInfo.xml to the Remote Sync Target folder.")
-        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 10, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.")
-        self._add_button(toolbar, "Help", self.show_help, 11, "Show a quick guide for this master UI.")
+        self._add_button(toolbar, "Info -> ComicInfo.xml", self.create_comicinfo, 5, "Confirm CBZ, info.txt, and English first, then add ComicInfo.xml.", row=1)
+        self._add_button(toolbar, "Process to Final", self.process_selected_to_final, 6, "Run every prerequisite and copy finished archives to the Final Library Destination.", row=1)
+        self._add_button(toolbar, "Sync Selected", self.sync_selected, 7, "Copy selected archives with root ComicInfo.xml to the Final Library Destination folder.", row=1)
+        self._add_button(toolbar, "Remove Dups", self.remove_duplicates, 8, "Hash-check direct-source archives and move duplicate matches into _DUPLICATES.", row=1)
+        self._add_button(toolbar, "Help", self.show_help, 9, "Show a quick guide for this master UI.", row=1)
 
         self.selected_label = ttk.Label(toolbar, textvariable=self.selected_count_var, anchor="e")
-        self.selected_label.grid(row=0, column=12, sticky="e", padx=(8, 0))
+        self.selected_label.grid(row=0, column=13, sticky="e", padx=(8, 0))
+
+        filter_label = ttk.Label(toolbar, text="Filter")
+        filter_label.grid(row=0, column=3, sticky="w", padx=(10, 4), pady=2)
+        filter_menu = ttk.Combobox(
+            toolbar,
+            textvariable=self.filter_var,
+            values=FILTER_OPTIONS,
+            state="readonly",
+            width=18,
+        )
+        filter_menu.grid(row=0, column=4, columnspan=2, sticky="w", pady=2)
+        filter_menu.bind("<<ComboboxSelected>>", self.on_filter_changed)
+        Tooltip(filter_label, "Show a focused subset of the current archive list.")
+        Tooltip(filter_menu, "Filter by the next action needed before final library copy.")
 
         list_frame = ttk.Frame(self, padding=(10, 0, 10, 4))
         list_frame.grid(row=2, column=0, sticky="nsew")
@@ -360,6 +415,7 @@ class ComicRackMasterUI(tk.Tk):
         self.tree = ttk.Treeview(list_frame, columns=TREE_COLUMNS, show="headings", selectmode="browse")
         self.configure_tree_headings()
         self.configure_tree_columns()
+        self.configure_tree_row_tags()
         self.tree.bind("<ButtonRelease-1>", self.on_tree_button_release)
         self.tree.bind("<Double-1>", self.open_tree_comic)
         self.tree.bind("<space>", self.toggle_current_selection)
@@ -413,9 +469,9 @@ class ComicRackMasterUI(tk.Tk):
         Tooltip(entry, tooltip)
         Tooltip(button, f"Choose the {label_text} folder.")
 
-    def _add_button(self, parent: ttk.Frame, text: str, command, column: int, tooltip: str) -> None:
+    def _add_button(self, parent: ttk.Frame, text: str, command, column: int, tooltip: str, row: int = 0) -> None:
         button = ttk.Button(parent, text=text, command=command)
-        button.grid(row=0, column=column, padx=(0, 6), pady=2)
+        button.grid(row=row, column=column, padx=(0, 6), pady=2)
         Tooltip(button, tooltip)
         self.action_buttons.append(button)
 
@@ -433,6 +489,10 @@ class ComicRackMasterUI(tk.Tk):
             minwidth = COLUMN_MIN_WIDTHS[column]
             anchor = "w" if column in {"file", "error"} else "center"
             self.tree.column(column, width=max(width, minwidth), minwidth=minwidth, stretch=False, anchor=anchor)
+
+    def configure_tree_row_tags(self) -> None:
+        for tag, color in NEXT_STEP_ROW_COLORS.items():
+            self.tree.tag_configure(tag, background=color)
 
     def current_column_widths(self) -> dict[str, int]:
         if not hasattr(self, "tree"):
@@ -552,6 +612,7 @@ class ComicRackMasterUI(tk.Tk):
                     self.append_log(str(result))
                 if done_message:
                     self.append_log(done_message)
+                self.save_current_settings()
                 self.end_busy()
                 if rescan_after:
                     self.after(50, self.rescan)
@@ -562,6 +623,7 @@ class ComicRackMasterUI(tk.Tk):
 
     def finish_worker_error(self, error: str) -> None:
         self.end_busy()
+        self.save_current_settings()
         messagebox.showerror("ComicRack Library Master", error)
         self.append_log(f"Error: {error}")
 
@@ -578,6 +640,7 @@ class ComicRackMasterUI(tk.Tk):
             state = load_source_state(source)
             records = scan_source_directory(source, settings.remote_sync_target, state)
             save_source_state(source, records, settings)
+            sync_series_list(source, records)
             return records
 
         def on_success(records: list[ArchiveRecord]) -> None:
@@ -590,13 +653,23 @@ class ComicRackMasterUI(tk.Tk):
 
         self.run_in_worker("Scanning archive status...", action, on_success, done_message="")
 
+    def visible_records(self) -> list[ArchiveRecord]:
+        return [record for record in self.records if archive_matches_filter(record, self.filter_var.get())]
+
+    def on_filter_changed(self, _event: tk.Event | None = None) -> None:
+        self.populate_tree()
+        self.save_current_settings(save_archive_state=False)
+
     def populate_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
-        for record in self.records:
+        for record in self.visible_records():
+            next_step = archive_next_step(record)
+            row_tag = NEXT_STEP_ROW_TAGS.get(next_step, "")
             self.tree.insert(
                 "",
                 "end",
                 iid=record.relative_path,
+                tags=(row_tag,) if row_tag else (),
                 values=(
                     "[x]" if record.selected else "[ ]",
                     record.relative_path,
@@ -605,6 +678,8 @@ class ComicRackMasterUI(tk.Tk):
                     YES if record.english else NO,
                     YES if record.has_comicinfo else NO,
                     YES if record.synced else NO,
+                    next_step,
+                    record.last_timestamp,
                     record.error,
                 ),
             )
@@ -612,8 +687,9 @@ class ComicRackMasterUI(tk.Tk):
 
     def update_selected_count(self) -> None:
         count = sum(1 for record in self.records if record.selected)
+        visible_count = len(self.visible_records())
         noun = "archive" if count == 1 else "archives"
-        self.selected_count_var.set(f"{count} {noun} selected")
+        self.selected_count_var.set(f"{count} {noun} selected / {visible_count} shown")
 
     def on_tree_button_release(self, event: tk.Event) -> None:
         region = self.tree.identify("region", event.x, event.y)
@@ -901,6 +977,64 @@ class ComicRackMasterUI(tk.Tk):
             paddle_ocr_cuda_enabled,
         )
 
+    def preflight_summary(self, source: Path, targets: list[ArchiveRecord], final_run: bool) -> str:
+        selected_count = len(targets)
+        zip_count = sum(1 for record in targets if not record.cbz)
+        missing_info_count = sum(1 for record in targets if not record.has_info)
+        non_english_count = sum(1 for record in targets if record.has_info and not record.english)
+        comicinfo_count = sum(1 for record in targets if record.has_comicinfo)
+        ready_count = sum(1 for record in targets if archive_next_step(record) == "Ready to sync")
+        problem_count = sum(1 for record in targets if record.error)
+        artist_game_skips = 0
+        image_count = 0
+        image_count_errors = 0
+
+        for record in targets:
+            archive_path = self.selected_archive_path(source, record)
+            if not self.translate_cg_var.get() and archive_path.is_file() and is_artist_or_game_cg_archive(archive_path):
+                artist_game_skips += 1
+            if record.has_info and not record.english and archive_path.is_file():
+                count, error = archive_image_count(archive_path)
+                image_count += count
+                if error:
+                    image_count_errors += 1
+
+        checks = []
+        node_path = shutil.which("node")
+        checks.append(f"Node: {'found' if node_path else 'missing'}")
+        checks.append(f"Python: {sys.executable}")
+        torii_set = bool(os.environ.get("TORII_API"))
+        if non_english_count:
+            checks.append(f"TORII_API: {'set' if torii_set else 'not set in this process'}")
+        if self.super_saver_var.get():
+            paddle_python = os.environ.get("PADDLEOCR_PYTHON") or sys.executable
+            checks.append(f"PaddleOCR Python: {paddle_python}")
+            checks.append(f"CUDA OCR: {'on' if self.paddle_ocr_cuda_var.get() else 'off'}")
+
+        destination_text = self.remote_var.get().strip() or "(not set)"
+        lines = [
+            f"Selected archives: {selected_count}",
+            f"ZIP archives to convert: {zip_count}",
+            f"Missing info.txt: {missing_info_count}",
+            f"Need translation: {non_english_count}",
+            f"Estimated translatable image entries: {image_count}",
+            f"Already have ComicInfo.xml: {comicinfo_count}",
+            f"Ready to sync now: {ready_count}",
+            f"Problem rows: {problem_count}",
+            f"Artist/Game CG skipped by current setting: {artist_game_skips}",
+            f"Final Library Destination: {destination_text}" if final_run else "",
+            "",
+            "Environment:",
+            *checks,
+        ]
+        if image_count_errors:
+            lines.insert(5, f"Archives whose image count could not be read: {image_count_errors}")
+        return "\n".join(line for line in lines if line != "")
+
+    def confirm_preflight(self, title: str, source: Path, targets: list[ArchiveRecord], final_run: bool = False) -> bool:
+        summary = self.preflight_summary(source, targets, final_run)
+        return messagebox.askyesno(title, f"{summary}\n\nContinue?")
+
     def convert_zip_to_cbz(self) -> None:
         source = self.require_source()
         if source is None:
@@ -916,7 +1050,12 @@ class ComicRackMasterUI(tk.Tk):
                 self.append_log_from_worker(f"Queued {total} ZIP archive(s) smallest to largest.")
             for index, record in enumerate(targets, start=1):
                 self.append_log_from_worker(f"Zip to CBZ [{index}/{total}]: {record.relative_path}")
-                self.ensure_cbz_archive(source, self.selected_archive_path(source, record))
+                try:
+                    self.ensure_cbz_archive(source, self.selected_archive_path(source, record))
+                    record_workflow_event(record, "Zip to CBZ", "ok", "Confirmed CBZ archive.")
+                except Exception as exc:
+                    record_workflow_event(record, "Zip to CBZ", "error", str(exc))
+                    raise
             return []
 
         self.run_in_worker("Running Zip to CBZ...", action, done_message="Zip to CBZ finished", rescan_after=True)
@@ -933,6 +1072,8 @@ class ComicRackMasterUI(tk.Tk):
         include_cg_galleries = self.translate_cg_var.get()
         super_saver_mode = self.super_saver_var.get()
         paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
+        if not self.confirm_preflight("Prepare ComicInfo.xml", source, targets):
+            return
 
         def action() -> list[str]:
             total = len(targets)
@@ -950,9 +1091,14 @@ class ComicRackMasterUI(tk.Tk):
                         super_saver_mode,
                         paddle_ocr_cuda_enabled,
                     )
+                    record_workflow_event(record, "Info -> ComicInfo.xml", "ok", "Confirmed ComicInfo.xml.")
                 except SkipArchive as exc:
                     skipped += 1
+                    record_workflow_event(record, "Info -> ComicInfo.xml", "skipped", str(exc))
                     self.append_log_from_worker(str(exc))
+                except Exception as exc:
+                    record_workflow_event(record, "Info -> ComicInfo.xml", "error", str(exc))
+                    raise
             return [f"Skipped {skipped} archive(s)."] if skipped else []
 
         self.run_in_worker(
@@ -974,6 +1120,8 @@ class ComicRackMasterUI(tk.Tk):
         include_cg_galleries = self.translate_cg_var.get()
         super_saver_mode = self.super_saver_var.get()
         paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
+        if not self.confirm_preflight("Translate Selected", source, targets):
+            return
 
         def action() -> list[str]:
             total = len(targets)
@@ -991,9 +1139,14 @@ class ComicRackMasterUI(tk.Tk):
                         super_saver_mode,
                         paddle_ocr_cuda_enabled,
                     )
+                    record_workflow_event(record, "Translate", "ok", "Confirmed English archive.")
                 except SkipArchive as exc:
                     skipped += 1
+                    record_workflow_event(record, "Translate", "skipped", str(exc))
                     self.append_log_from_worker(str(exc))
+                except Exception as exc:
+                    record_workflow_event(record, "Translate", "error", str(exc))
+                    raise
             return [f"Skipped {skipped} archive(s)."] if skipped else []
 
         self.run_in_worker("Translating selected archives...", action, done_message="Translate selected finished", rescan_after=True)
@@ -1004,7 +1157,7 @@ class ComicRackMasterUI(tk.Tk):
             return
         remote_sync_target = self.remote_var.get().strip()
         if not remote_sync_target:
-            messagebox.showinfo("ComicRack Library Master", "Set Remote Sync Target before syncing.")
+            messagebox.showinfo("ComicRack Library Master", "Set Final Library Destination before syncing.")
             return
         targets = self.selected_records()
         if not targets:
@@ -1015,9 +1168,73 @@ class ComicRackMasterUI(tk.Tk):
             total = len(targets)
             if total > 1:
                 self.append_log_from_worker(f"Queued {total} selected archive(s) smallest to largest.")
-            return sync_selected_archives(targets, source, remote_sync_target)
+            messages = sync_selected_archives(targets, source, remote_sync_target)
+            for record in targets:
+                record_workflow_event(record, "Sync Selected", "ok", "Sync attempted. Check log for any skips.")
+            return messages
 
         self.run_in_worker("Syncing selected archives...", action, done_message="Sync selected finished", rescan_after=True)
+
+    def process_selected_to_final(self) -> None:
+        source = self.require_source()
+        if source is None:
+            return
+        final_destination = self.remote_var.get().strip()
+        if not final_destination:
+            messagebox.showinfo("ComicRack Library Master", "Set Final Library Destination before processing to final.")
+            return
+        cli_dir = repo_root() / "TranslateEXGallery"
+        targets = self.selected_records()
+        if not targets:
+            messagebox.showinfo("ComicRack Library Master", "Select at least one archive.")
+            return
+        if not self.confirm_preflight("Process Selected To Final", source, targets, final_run=True):
+            return
+
+        include_cg_galleries = self.translate_cg_var.get()
+        super_saver_mode = self.super_saver_var.get()
+        paddle_ocr_cuda_enabled = self.paddle_ocr_cuda_var.get()
+
+        def action() -> list[str]:
+            total = len(targets)
+            skipped = 0
+            copied = 0
+            messages: list[str] = []
+            if total > 1:
+                self.append_log_from_worker(f"Queued {total} selected archive(s) for final processing.")
+            for index, record in enumerate(targets, start=1):
+                self.append_log_from_worker(f"Process to Final [{index}/{total}]: {record.relative_path}")
+                try:
+                    archive_path = self.prepare_archive_for_sync(
+                        source,
+                        record,
+                        cli_dir,
+                        include_cg_galleries,
+                        super_saver_mode,
+                        paddle_ocr_cuda_enabled,
+                    )
+                    message = sync_archive_path(archive_path, source, final_destination)
+                    copied += 1
+                    self.append_log_from_worker(message)
+                    record_workflow_event(record, "Process to Final", "ok", message)
+                except SkipArchive as exc:
+                    skipped += 1
+                    record_workflow_event(record, "Process to Final", "skipped", str(exc))
+                    self.append_log_from_worker(str(exc))
+                except Exception as exc:
+                    record_workflow_event(record, "Process to Final", "error", str(exc))
+                    raise
+            messages.append(f"Copied {copied} archive(s) to final destination.")
+            if skipped:
+                messages.append(f"Skipped {skipped} archive(s).")
+            return messages
+
+        self.run_in_worker(
+            "Processing selected archives to final destination...",
+            action,
+            done_message="Process to Final finished",
+            rescan_after=True,
+        )
 
     def remove_duplicates(self) -> None:
         source = self.require_source()
@@ -1094,19 +1311,21 @@ class ComicRackMasterUI(tk.Tk):
     def show_help(self) -> None:
         messagebox.showinfo(
             "ComicRack Library Master Help",
-            "Set the three library paths at the top, then use Rescan to refresh archive status.\n\n"
+            "Set the library paths at the top, then use Rescan to refresh archive status. ComicRack Source is the working folder; Final Library Destination is where finished archives are copied.\n\n"
             "The list shows ZIP and CBZ archives directly inside ComicRack Source. Subdirectories are ignored. ZIP files appear first. "
             "CBZ archives are selected by default the first time they are found, and your later selections persist.\n\n"
             "Selected archives are processed from smallest to largest, regardless of the current table sort.\n\n"
-            "Workflow columns are ordered as CBZ, Info, ENGLISH, ComicInfo, and Synced. "
+            "Workflow columns are ordered as CBZ, Info, ENGLISH, ComicInfo, Synced, Next Step, Last Run, and Status. "
             "When a later UI tool is run, the UI first confirms the preceding columns and runs missing prerequisite steps when it can. "
-            "Sync only copies selected archives that already contain ComicInfo.xml at the archive root; the rest of the selected batch continues.\n\n"
+            "Process to Final runs the whole chain and then copies finished archives to the Final Library Destination. "
+            "Sync Selected only copies selected archives that already contain ComicInfo.xml at the archive root; the rest of the selected batch continues.\n\n"
+            "Use the filter menu to focus on archives that need work, are ready to sync, have problems, are already synced, are non-English, or are missing info.txt.\n\n"
             "By default, Translate skips archives whose info.txt category is Artist CG or Game CG. Check Artist/Game CG to include them.\n\n"
             "Super-Saver mode is off by default. When enabled, Translate uses PaddleOCR text detection to skip pages where no text boxes are found.\n\n"
             "CUDA OCR only applies when Super-Saver mode is enabled, and requires PaddleOCR to run under a compatible paddlepaddle-gpu install.\n\n"
-            "During translation, the bottom progress bar shows the current image count for the active archive.\n\n"
+            "Before large translation or final-processing runs, the UI shows a preflight summary with selected counts, likely translation work, destination, and environment checks. During translation, the bottom progress bar shows the current image count for the active archive.\n\n"
             "Double-click a comic to open it with the Windows app associated with that archive type.\n\n"
-            "Status and selections are saved in .comicrack_master_state.json inside ComicRack Source. "
+            "Status, selections, and compact last-run history are saved in .comicrack_master_state.json inside ComicRack Source. "
             "The path fields are saved in master_ui_settings.json beside this UI script.",
         )
 

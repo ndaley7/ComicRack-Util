@@ -2,9 +2,11 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from comicrack_master import (
     AppSettings,
+    archive_next_step,
     gallery_category_from_info_text,
     info_text_indicates_english,
     is_artist_or_game_cg_archive,
@@ -13,10 +15,12 @@ from comicrack_master import (
     records_as_copy_list,
     load_source_state,
     move_source_archive_to_translated_folder,
+    record_workflow_event,
     save_app_settings,
     save_source_state,
     scan_source_directory,
     sorted_archive_records,
+    sync_series_list,
     sync_selected_archives,
 )
 
@@ -134,9 +138,11 @@ class ComicRackMasterTests(unittest.TestCase):
         self.assertEqual(category, "Artist CG")
 
     def test_info_text_indicates_english_for_western_category(self) -> None:
+        self.assertTrue(info_text_indicates_english("Language: English\n"))
         self.assertTrue(info_text_indicates_english("Category: Western\nLanguage: Japanese\n"))
         self.assertTrue(info_text_indicates_english("Category = western\nLanguage: Japanese\n"))
         self.assertFalse(info_text_indicates_english("Category: Manga\nLanguage: Japanese\n"))
+        self.assertFalse(info_text_indicates_english("Language: Japanese\nUploader Comment:\nEnglish soon\n"))
 
     def test_is_artist_or_game_cg_archive_detects_skipped_categories(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
@@ -161,6 +167,57 @@ class ComicRackMasterTests(unittest.TestCase):
             records = scan_source_directory(source)
 
             self.assertEqual(records_as_copy_list(records), "First.zip\nSecond.cbz")
+
+    def test_sync_series_list_creates_unsorted_entries_for_all_records(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "First.zip", {"page.jpg": "image"})
+            write_archive(source / "Second.cbz", {"page.jpg": "image"})
+            records = scan_source_directory(source)
+
+            path = sync_series_list(source, records)
+
+            self.assertTrue(path.read_text(encoding="utf-8").startswith('<?xml version="1.0" encoding="UTF-8"?>'))
+            root = ElementTree.parse(path).getroot()
+            series = root.find("series")
+            self.assertIsNotNone(series)
+            self.assertEqual(series.get("name"), "unsorted")
+            self.assertEqual(
+                [(comic.get("number"), comic.text) for comic in series.findall("comic")],
+                [("0", "First.zip"), ("0", "Second.cbz")],
+            )
+
+    def test_sync_series_list_preserves_existing_assignments_and_adds_new_unsorted(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Alpha.cbz", {"page.jpg": "image"})
+            write_archive(source / "Beta.cbz", {"page.jpg": "image"})
+            write_archive(source / "Gamma.cbz", {"page.jpg": "image"})
+            (source / "series.xml").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<comics>\n'
+                '  <series name="unsorted">\n'
+                '    <comic number="0">Missing.cbz</comic>\n'
+                '    <comic number="0">Beta.cbz</comic>\n'
+                '  </series>\n'
+                '  <series name="Featured">\n'
+                '    <comic number="2">Alpha.cbz</comic>\n'
+                '  </series>\n'
+                '</comics>\n',
+                encoding="utf-8",
+            )
+            records = scan_source_directory(source)
+
+            sync_series_list(source, records)
+
+            root = ElementTree.parse(source / "series.xml").getroot()
+            grouped = {
+                series.get("name"): [(comic.get("number"), comic.text) for comic in series.findall("comic")]
+                for series in root.findall("series")
+            }
+            self.assertEqual(grouped["Featured"], [("2", "Alpha.cbz")])
+            self.assertEqual(grouped["unsorted"], [("0", "Beta.cbz"), ("0", "Gamma.cbz")])
+            self.assertNotIn("Missing.cbz", (comic for comics in grouped.values() for _number, comic in comics))
 
     def test_sync_copies_only_archives_with_root_comicinfo(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw, tempfile.TemporaryDirectory() as remote_raw:
@@ -194,6 +251,32 @@ class ComicRackMasterTests(unittest.TestCase):
             self.assertEqual([record.relative_path for record in by_file_desc], ["Beta.cbz", "Alpha.zip"])
             self.assertEqual([record.relative_path for record in by_cbz_desc], ["Beta.cbz", "Alpha.zip"])
             self.assertEqual([record.relative_path for record in by_info_desc], ["Beta.cbz", "Alpha.zip"])
+
+    def test_archive_next_step_describes_pipeline_status(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "NeedsTranslation.cbz", {"info.txt": "Language: Japanese"})
+            write_archive(source / "Ready.cbz", {"info.txt": "Language: English", "ComicInfo.xml": "<ComicInfo />"})
+            records = scan_source_directory(source)
+
+            by_name = {record.relative_path: record for record in records}
+
+            self.assertEqual(archive_next_step(by_name["NeedsTranslation.cbz"]), "Needs translation")
+            self.assertEqual(archive_next_step(by_name["Ready.cbz"]), "Ready to sync")
+
+    def test_record_workflow_event_persists_last_run_history(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            write_archive(source / "Ready.cbz", {"info.txt": "Language: English"})
+            records = scan_source_directory(source)
+            record_workflow_event(records[0], "Translate", "ok", "Confirmed English archive.")
+            save_source_state(source, records)
+
+            rescanned = scan_source_directory(source, previous_state=load_source_state(source))
+
+            self.assertEqual(rescanned[0].last_action, "Translate")
+            self.assertEqual(rescanned[0].last_result, "ok")
+            self.assertEqual(rescanned[0].history[-1]["message"], "Confirmed English archive.")
 
     def test_app_settings_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as base_raw:

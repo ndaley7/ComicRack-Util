@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DUPLICATES_DIR_NAME = "Duplicates"
+DUPLICATES_DIR_NAME = "_DUPLICATES"
 PROBLEMS_DIR_NAME = "_PROBLEMS"
 PROBLEMS_LOG_FILENAME = "problems.log"
 
@@ -203,7 +203,7 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Rename .zip files in a target directory to .cbz, flatten redundant "
             "same-named top-level archive folders, and move smaller duplicate "
-            "archives into Duplicates."
+            "archives into _DUPLICATES."
         )
     )
     parser.add_argument(

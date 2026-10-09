@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { decodeInfoText, updateLanguageToEnglish } from './infoTxt.js';
+import { decodeInfoText, infoTextIndicatesEnglish, updateLanguageToEnglish } from './infoTxt.js';
 import { PaddleOcrTextDetector } from './paddleTextDetector.js';
 import { buildTranslatedZip, defaultOutputPath, findInfoEntry, listImageEntries, readZip } from './zipUtils.js';
 
@@ -255,6 +255,17 @@ export async function translateGalleryZip({
   }
 
   const infoText = decodeInfoText(infoEntry.getData());
+  if (infoTextIndicatesEnglish(infoText)) {
+    const reason = 'Archive info.txt indicates English.';
+    onProgress({ type: 'skipped', reason });
+    return {
+      skipped: true,
+      reason,
+      inputZipPath: resolvedInputPath,
+      imageCount: 0
+    };
+  }
+
   const { sourceLanguage, updatedText } = updateLanguageToEnglish(infoText);
   const replacements = new Map([[infoEntry.entryName, Buffer.from(updatedText, 'utf8')]]);
   const signature = sourceSignature(resolvedInputPath);
