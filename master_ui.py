@@ -251,6 +251,12 @@ def selected_records_for_run(records: list[ArchiveRecord]) -> list[ArchiveRecord
     )
 
 
+def comic_list_text(records: list[ArchiveRecord], table_paths: list[str]) -> tuple[str, int]:
+    if records:
+        return records_as_copy_list(records), len(records)
+    return "\n".join(table_paths), len(table_paths)
+
+
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str) -> None:
         self.widget = widget
@@ -1278,7 +1284,8 @@ class ComicRackMasterUI(tk.Tk):
         x_scroll.grid(row=1, column=0, sticky="ew")
         text.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
 
-        list_text = records_as_copy_list(self.records)
+        table_paths = [str(row_id) for row_id in self.tree.get_children("")]
+        list_text, comic_count = comic_list_text(self.records, table_paths)
         display_text = list_text or "No comics are currently logged."
         text.insert("1.0", display_text)
         text.focus_set()
@@ -1287,7 +1294,7 @@ class ComicRackMasterUI(tk.Tk):
         button_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         button_frame.columnconfigure(0, weight=1)
 
-        count_label = ttk.Label(button_frame, text=f"{len(self.records)} comic(s)")
+        count_label = ttk.Label(button_frame, text=f"{comic_count} comic(s)")
         count_label.grid(row=0, column=0, sticky="w")
         copy_button = ttk.Button(button_frame, text="Copy All", command=lambda: self.copy_logged_comics(list_text))
         copy_button.grid(row=0, column=1, sticky="e", padx=(0, 6))

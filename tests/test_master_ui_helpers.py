@@ -12,6 +12,7 @@ from master_ui import (
     SkipArchive,
     TREE_COLUMNS,
     archive_record_from_path,
+    comic_list_text,
     open_archive_with_default_app,
     resolve_command_executable,
     run_captured_command,
@@ -94,6 +95,23 @@ class MasterUiHelperTests(unittest.TestCase):
 
             self.assertEqual(result, archive_path)
             ui.append_log_from_worker.assert_any_call("Skipped translation because ENGLISH is already Yes: AlreadyEnglish.cbz")
+
+    def test_comic_list_text_uses_records_when_available(self) -> None:
+        records = [
+            ArchiveRecord("B.cbz", "B.cbz", True, True, True, False, False, False, 2, 0),
+            ArchiveRecord("A.cbz", "A.cbz", True, True, True, False, False, False, 1, 0),
+        ]
+
+        text, count = comic_list_text(records, ["VisibleOnly.cbz"])
+
+        self.assertEqual(text, "B.cbz\nA.cbz")
+        self.assertEqual(count, 2)
+
+    def test_comic_list_text_falls_back_to_table_rows(self) -> None:
+        text, count = comic_list_text([], ["ShownA.cbz", "ShownB.cbz"])
+
+        self.assertEqual(text, "ShownA.cbz\nShownB.cbz")
+        self.assertEqual(count, 2)
 
     def test_selected_records_for_run_orders_selected_entries_by_size(self) -> None:
         records = [

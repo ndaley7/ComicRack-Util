@@ -87,6 +87,34 @@ class RemoveDuplicatesTests(unittest.TestCase):
             self.assertIn("Moved duplicate Comic(1).zip", "\n".join(messages))
             self.assertIn("Moved duplicate Comic (2).zip", "\n".join(messages))
 
+    def test_move_duplicate_archives_keeps_translated_name_over_base(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            base_name = "Nuko Musume vs Youkai Shirikabe (C95).cbz"
+            translated_name = "Nuko Musume vs Youkai Shirikabe (C95) - translated.cbz"
+            write_archive(source / base_name, {"page.jpg": "original"})
+            write_archive(source / translated_name, {"page.jpg": "translated version"})
+
+            messages = move_duplicate_archives(source)
+
+            duplicates_dir = source / DUPLICATES_DIR_NAME
+            self.assertFalse((source / base_name).exists())
+            self.assertTrue((source / translated_name).exists())
+            self.assertTrue((duplicates_dir / base_name).exists())
+            self.assertIn(f"Moved duplicate {base_name}", "\n".join(messages))
+
+    def test_move_duplicate_archives_keeps_base_when_translated_name_has_no_base(self) -> None:
+        with tempfile.TemporaryDirectory() as source_raw:
+            source = Path(source_raw)
+            translated_name = "Nuko Musume vs Youkai Shirikabe (C95) - translated.cbz"
+            write_archive(source / translated_name, {"page.jpg": "translated version"})
+
+            messages = move_duplicate_archives(source)
+
+            self.assertEqual(messages, ["No duplicate archives found."])
+            self.assertTrue((source / translated_name).exists())
+            self.assertFalse((source / DUPLICATES_DIR_NAME).exists())
+
     def test_move_duplicate_archives_keeps_numbered_copy_when_base_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as source_raw:
             source = Path(source_raw)

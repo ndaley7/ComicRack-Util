@@ -18,6 +18,7 @@ LOG_FILENAME = "duplicates.log"
 SUPPORTED_SUFFIXES = {".cbz", ".zip"}
 CHUNK_SIZE = 1024 * 1024
 COPY_SUFFIX_RE = re.compile(r"^(?P<base>.+?)\s*\((?P<copy_number>[1-9]\d*)\)$")
+TRANSLATED_SUFFIX_RE = re.compile(r"^(?P<base>.+?)\s*[-_]\s*translated(?:eng)?$", re.IGNORECASE)
 
 
 def configure_text_output() -> None:
@@ -85,6 +86,17 @@ def numbered_copy_base_name(path: Path) -> str | None:
     return f"{base}{path.suffix}"
 
 
+def translated_base_stem(path: Path) -> str | None:
+    match = TRANSLATED_SUFFIX_RE.match(path.stem)
+    if not match:
+        return None
+
+    base = match.group("base").rstrip()
+    if not base:
+        return None
+    return base
+
+
 def find_duplicate_groups(source_dir: Path) -> list[tuple[Path, list[Path], str]]:
     by_size: dict[int, list[Path]] = {}
     for archive_path in iter_archive_files(source_dir):
@@ -128,6 +140,28 @@ def find_numbered_copy_groups(source_dir: Path, ignored_paths: set[Path]) -> lis
         groups.append((keeper, [archive_path], sha256_file(archive_path)))
 
     return groups
+
+
+def find_translated_name_pairs(source_dir: Path, ignored_paths: set[Path]) -> list[tuple[Path, Path]]:
+    archive_paths = iter_archive_files(source_dir)
+    archive_by_name = {path.name.lower(): path for path in archive_paths}
+    pairs: list[tuple[Path, Path]] = []
+
+    for translated_path in archive_paths:
+        if translated_path in ignored_paths:
+            continue
+
+        base_stem = translated_base_stem(translated_path)
+        if base_stem is None:
+            continue
+
+        for suffix in sorted(SUPPORTED_SUFFIXES):
+            base_path = archive_by_name.get(f"{base_stem}{suffix}".lower())
+            if base_path is None or base_path in ignored_paths or base_path == translated_path:
+                continue
+            pairs.append((translated_path, base_path))
+
+    return pairs
 
 
 def append_move_log(source_dir: Path, moves: list[DuplicateMove]) -> Path:
@@ -196,6 +230,20 @@ def move_duplicate_archives(source_dir: Path, dry_run: bool = False) -> list[str
             action = "Would move" if dry_run else "Moved"
             messages.append(f"{action} duplicate {duplicate_path.name} -> {destination.name}; kept {keeper.name}")
 
+    for keeper, duplicate_path in find_translated_name_pairs(source_dir, planned_sources):
+        destination = unique_path(duplicates_dir / duplicate_path.name)
+        move = DuplicateMove(
+            source=duplicate_path,
+            destination=destination,
+            keeper=keeper,
+            sha256=sha256_file(duplicate_path),
+            size=duplicate_path.stat().st_size,
+        )
+        moves.append(move)
+        planned_sources.add(duplicate_path)
+        action = "Would move" if dry_run else "Moved"
+        messages.append(f"{action} duplicate {duplicate_path.name} -> {destination.name}; kept {keeper.name}")
+
     if not moves:
         return ["No duplicate archives found."]
 
@@ -215,7 +263,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Compare direct-child .zip/.cbz archives by size and SHA-256, then "
-            "move duplicate matches and numbered copies into a _DUPLICATES folder."
+            "move duplicate matches, numbered copies, and translated-name originals into a _DUPLICATES folder."
         )
     )
     parser.add_argument("source", help="ComicRack source directory to inspect.")
